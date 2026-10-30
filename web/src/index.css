@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. See docs/design-system.md. Values are design choices for a familiar
+ * LMS layout (dark rail, white content, one blue accent); none were measured from Canvas.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Accent (links, primary buttons, active states). 700 on white = 7.0:1, on --color-canvas = 6.5:1. */
+  --color-brand-50: #eef5fb;
+  --color-brand-100: #d7e8f6;
+  --color-brand-200: #b0d0ee;
+  --color-brand-300: #7fb2e0;
+  --color-brand-500: #2f80c4;
+  --color-brand-600: #1f6dae;
+  --color-brand-700: #1a5c94;
+  --color-brand-800: #164c7a;
+  --color-brand-900: #123c60;
+
+  /* Notification count badge on the dark rail. */
+  --color-accent-400: #fbbf24;
+  --color-accent-500: #f59e0b;
+
+  /* Global navigation rail. Label text on rail = 9.5:1; active item = brand-700 on white, 7.0:1. */
+  --color-rail: #26323d;
+  --color-rail-hover: #33424f;
+  --color-rail-active: #ffffff;
+  --color-rail-text: #d5dde4;
+  --color-rail-active-text: #1a5c94;
+
+  /* Surfaces. */
+  --color-canvas: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-line: #dfe3e8;
+
+  --radius-control: 0.375rem;
+  --radius-panel: 0.5rem;
+
+  --animate-tray-in: tray-in 160ms ease-out;
+  --animate-fade-in: fade-in 160ms ease-out;
+}
+
+@keyframes tray-in {
+  from { transform: translateX(-12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-slate-900 antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+  h1, h2, h3 {
+    @apply text-slate-900;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Sanitized HTML produced by the server (pages, descriptions, posts). */
+.rich-content {
+  @apply text-slate-800 leading-relaxed break-words;
+}
+.rich-content > * + * {
+  @apply mt-3;
+}
+.rich-content h1 { @apply text-2xl font-semibold mt-6; }
+.rich-content h2 { @apply text-xl font-semibold mt-5; }
+.rich-content h3 { @apply text-lg font-semibold mt-4; }
+.rich-content a { @apply text-brand-700 underline underline-offset-2 hover:text-brand-900; }
+.rich-content ul { @apply list-disc pl-6; }
+.rich-content ol { @apply list-decimal pl-6; }
+.rich-content li + li { @apply mt-1; }
+.rich-content blockquote { @apply border-l-4 border-brand-200 bg-brand-50 px-4 py-2 italic text-slate-700; }
+.rich-content code { @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.9em]; }
+.rich-content pre { @apply overflow-x-auto rounded-lg bg-slate-900 p-4 text-slate-100; }
+.rich-content pre code { @apply bg-transparent p-0 text-inherit; }
+.rich-content table { @apply w-full border-collapse text-sm; }
+.rich-content th, .rich-content td { @apply border border-slate-200 px-3 py-2 text-left; }
+.rich-content th { @apply bg-slate-100 font-semibold; }
+.rich-content img { @apply max-w-full h-auto rounded; }
+.rich-content iframe { @apply aspect-video w-full rounded-lg border-0; }
+.rich-content hr { @apply border-slate-200; }
