@@ -27,6 +27,7 @@ Production must set:
 | `DATABASE_URL` | `postgres://user:password@host:5432/db` |
 | `APP_URL` | The public HTTPS URL, used in activation and reset links |
 | `FILE_STORAGE_DIR` | Persistent private directory, **not** inside any web root |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Optional. Store uploads in S3-compatible object storage instead of `FILE_STORAGE_DIR`. **Required on hosts with a temporary disk**, such as Render's free plan. Set all four or none; the server refuses to start with a partial set. `S3_REGION` defaults to `auto` (correct for Cloudflare R2). |
 | `TRUST_PROXY` | `true` when behind a proxy (correct client IPs for rate limits and audit) |
 | `COOKIE_SECURE` | `true` (the default in production) |
 | `SMTP_URL` / `MAIL_FROM` | Optional. Without them the UI states that email is not configured. |

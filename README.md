@@ -121,13 +121,15 @@ To change the schema, edit `server/src/db/schema.ts`, then run
 |---|---|
 | `npm run lint` | pass (0 problems) |
 | `npm run typecheck` | pass (server + web, strict) |
-| `npm test` | **128 / 128** passed (7 files) |
+| `npm test` | **137 / 137** passed (8 files) |
 | `npm run test:e2e` | **12 / 12** passed (11 desktop + 1 mobile) |
 | `npm run build` | pass. Note: the single JS bundle is 540 kB (150 kB gzip); route-level code splitting is a future optimization. |
 | Production bundle smoke test | pass (migrations, SPA, CSP headers, error envelope) |
 | Docker image / PostgreSQL server | **not run** (no Docker or Postgres on the build machine) |
 
 ## Deployment
+
+Free-tier split hosting (Vercel, Render, Neon, Cloudflare R2): `vercel.json` builds the web app and forwards `/api/*` to the Render service. Update its `destination` if your Render URL isn't `campus-lms-api.onrender.com`. Set `S3_*` on hosts with a temporary disk.
 
 See [docs/deployment.md](docs/deployment.md): environment variables, `npm start` and Docker
 Compose (PostgreSQL + app), first-admin bootstrap, **backup and restore** for the database and

@@ -14,7 +14,7 @@ import { sha256 } from "./lib/crypto.js";
 import { AppError } from "./lib/errors.js";
 import { registerRoutes } from "./routes/index.js";
 import { createMailer, type Mailer } from "./services/mail.js";
-import { LocalDiskStorage, type FileStorage } from "./services/storage.js";
+import { createStorage, type FileStorage } from "./services/storage.js";
 import "./types.js";
 
 import { SESSION_COOKIE } from "./lib/session.js";
@@ -40,7 +40,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   app.decorate("ctx", {
     db: opts.db,
     config,
-    storage: opts.storage ?? new LocalDiskStorage(config.FILE_STORAGE_DIR),
+    storage: opts.storage ?? createStorage(config),
     mailer: opts.mailer ?? createMailer(config, app.log),
   });
   app.decorateRequest("user", null);

@@ -18,13 +18,38 @@ const EnvSchema = z.object({
   TRUST_PROXY: bool.default(false),
   FILE_STORAGE_DIR: z.string().default("./data/uploads"),
   MAX_UPLOAD_MB: z.coerce.number().positive().max(512).default(25),
+  // S3-compatible object storage. Set all four, or leave all empty to use FILE_STORAGE_DIR.
+  S3_ENDPOINT: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_REGION: z.string().default("auto"),
   SMTP_URL: z.string().optional(),
   MAIL_FROM: z.string().default("Campus LMS Lite <no-reply@localhost>"),
   WEB_DIST_DIR: z.string().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 
-export type Config = z.infer<typeof EnvSchema> & { cookieSecure: boolean };
+export interface S3Config {
+  endpoint: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+}
+
+export type Config = z.infer<typeof EnvSchema> & { cookieSecure: boolean; s3: S3Config | null };
+
+function loadS3(c: z.infer<typeof EnvSchema>): S3Config | null {
+  const { S3_ENDPOINT: endpoint, S3_BUCKET: bucket, S3_ACCESS_KEY_ID: accessKeyId, S3_SECRET_ACCESS_KEY: secretAccessKey } = c;
+  if (!endpoint && !bucket && !accessKeyId && !secretAccessKey) return null;
+  // A partial setup must stop the server: falling back to local disk would silently lose uploads on hosts with temporary disks.
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw new Error("Invalid environment configuration: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must all be set together");
+  }
+  if (!z.url().safeParse(endpoint).success) throw new Error("Invalid environment configuration: S3_ENDPOINT must be a URL");
+  return { endpoint, bucket, accessKeyId, secretAccessKey, region: c.S3_REGION };
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = EnvSchema.safeParse(env);
@@ -37,5 +62,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ...c,
     FILE_STORAGE_DIR: path.resolve(c.FILE_STORAGE_DIR),
     cookieSecure: c.COOKIE_SECURE ?? c.NODE_ENV === "production",
+    s3: loadS3(c),
   };
 }

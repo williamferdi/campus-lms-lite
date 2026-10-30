@@ -29,6 +29,6 @@ RUN mkdir -p /data/uploads && chown -R node:node /data
 USER node
 WORKDIR /app/server
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:${PORT:-3000}/healthz || exit 1
 # Migrations run automatically on start (idempotent).
 CMD ["node", "dist/index.js"]

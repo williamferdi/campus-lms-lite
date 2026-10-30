@@ -50,6 +50,9 @@ export function createDatabase(url: string): Database {
     };
   }
   const pool = new pg.Pool({ connectionString: url, max: 10 });
+  // Hosted databases can drop idle connections (Neon pauses when idle). Without a listener this would crash the process;
+  // the pool discards the broken client and opens a new one on the next query.
+  pool.on("error", (err) => console.error("Idle database connection closed:", err.message));
   const db = drizzlePg(pool, { schema });
   return {
     db,
