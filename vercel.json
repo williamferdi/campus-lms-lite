@@ -5,7 +5,7 @@
   "buildCommand": "npm run build --workspace web",
   "outputDirectory": "web/dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://campus-lms-api.onrender.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://campus-lms-lite.onrender.com/api/:path*" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ],
   "headers": [

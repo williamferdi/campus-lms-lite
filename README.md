@@ -129,7 +129,7 @@ To change the schema, edit `server/src/db/schema.ts`, then run
 
 ## Deployment
 
-Free-tier split hosting (Vercel, Render, Neon, Cloudflare R2): `vercel.json` builds the web app and forwards `/api/*` to the Render service. Update its `destination` if your Render URL isn't `campus-lms-api.onrender.com`. Set `S3_*` on hosts with a temporary disk.
+Free-tier split hosting (Vercel, Render, Neon, Cloudflare R2): `vercel.json` builds the web app and forwards `/api/*` to the Render service. Update its `destination` if your Render URL changes (currently `campus-lms-lite.onrender.com`). Set `S3_*` on hosts with a temporary disk.
 
 See [docs/deployment.md](docs/deployment.md): environment variables, `npm start` and Docker
 Compose (PostgreSQL + app), first-admin bootstrap, **backup and restore** for the database and
