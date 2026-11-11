@@ -15,6 +15,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Statuses the hosting layer (Render waking from sleep, Cloudflare bot checks, gateways) sends without
+ * the app's JSON error envelope. The app's own errors always carry `{ error: {...} }`.
+ */
+const HOSTING_STATUSES = new Set([429, 502, 503, 504]);
+const SERVER_STARTING = "server_starting";
+
+/** True when the server was unreachable for a hosting reason and the request is worth retrying shortly. */
+export const isServerStarting = (e: unknown) => e instanceof ApiError && e.code === SERVER_STARTING;
+
 let csrfToken: string | null = null;
 export const setCsrfToken = (t: string | null) => {
   csrfToken = t;
@@ -41,6 +51,9 @@ async function request<T>(method: Method, url: string, body?: unknown, init?: { 
   const data = isJson ? await res.json().catch(() => null) : null;
   if (!res.ok) {
     const err = (data as { error?: { code: string; message: string; details?: { path: string; message: string }[] } } | null)?.error;
+    if (!err && HOSTING_STATUSES.has(res.status)) {
+      throw new ApiError(res.status, SERVER_STARTING, "The server is starting up. Please wait a minute and try again.");
+    }
     if (res.status === 401 && url !== "/auth/login") window.dispatchEvent(new Event("lms:unauthorized"));
     throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Request failed (${res.status}).`, err?.details);
   }

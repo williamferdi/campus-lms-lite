@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, setCsrfToken } from "./api";
+import { api, isServerStarting, setCsrfToken } from "./api";
 import type { User } from "./types";
 
 interface AuthState {
@@ -24,10 +24,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const me = await api.get<{ user: User | null; csrfToken: string | null; emailConfigured?: boolean }>("/auth/me");
-      setCsrfToken(me.csrfToken);
-      setUser(me.user);
-      setEmailConfigured(!!me.emailConfigured);
+      // While the host wakes from sleep (up to about a minute), keep the loading screen instead of
+      // treating a signed-in user as signed out.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const me = await api.get<{ user: User | null; csrfToken: string | null; emailConfigured?: boolean }>("/auth/me");
+          setCsrfToken(me.csrfToken);
+          setUser(me.user);
+          setEmailConfigured(!!me.emailConfigured);
+          return;
+        } catch (err) {
+          if (!isServerStarting(err) || attempt >= 12) throw err;
+          await new Promise((r) => setTimeout(r, 5_000));
+        }
+      }
     } catch {
       setUser(null);
     } finally {

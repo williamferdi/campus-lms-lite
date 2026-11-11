@@ -70,3 +70,26 @@ test("key screens have no serious accessibility violations", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Gradebook" })).toBeVisible();
   await check("gradebook");
 });
+
+// Hosting layers (Render waking from sleep, Cloudflare bot checks) answer with HTML, not the app's JSON errors.
+const hostingPage = { status: 429, contentType: "text/html", body: "<!DOCTYPE html><title>Just a moment...</title>" };
+
+test("a hosting 429 shows a clear 'starting up' message instead of a bare status", async ({ page }) => {
+  await page.goto("/login");
+  await page.route("**/api/v1/auth/login", (route) => route.fulfill(hostingPage));
+  await page.getByLabel("Email").fill(users.alex);
+  await page.getByLabel("Password").fill("whatever-123");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("The server is starting up. Please wait a minute and try again.")).toBeVisible();
+  await expect(page.getByText("Request failed (429)")).toHaveCount(0);
+});
+
+test("a signed-in user stays signed in while the server wakes up", async ({ page }) => {
+  await login(page, users.alex);
+  let blocked = 0;
+  await page.route("**/api/v1/auth/me", (route) => (blocked++ < 2 ? route.fulfill({ ...hostingPage, status: 503 }) : route.continue()));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible({ timeout: 20_000 });
+  expect(blocked).toBeGreaterThanOrEqual(3);
+  await expect(page).not.toHaveURL(/\/login/);
+});

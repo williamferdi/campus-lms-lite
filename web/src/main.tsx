@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { FeedbackProvider } from "./components/ui/feedback";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { ApiError } from "./lib/api";
+import { ApiError, isServerStarting } from "./lib/api";
 import { AuthProvider } from "./lib/auth";
 import "./index.css";
 
@@ -12,8 +12,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 15_000,
-      // Don't retry permission/validation errors; do retry transient failures once.
-      retry: (count, err) => !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 1,
+      // Keep retrying while the host wakes up; don't retry permission/validation errors; retry other failures once.
+      retry: (count, err) => (isServerStarting(err) ? count < 6 : !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 1),
+      retryDelay: (attempt, err) => (isServerStarting(err) ? 5_000 : Math.min(1000 * 2 ** attempt, 30_000)),
       refetchOnWindowFocus: true,
     },
   },
