@@ -303,6 +303,8 @@ describe("reading exam results back", () => {
     expect(row.person.externalId).toBe(CANDIDATE);
     expect(row.pointsPossible).toBe(75);
     expect(row.questions.map((q: { earned: number | null }) => q.earned)).toEqual([null, null, null]);
+    expect(row.questions[0].prompt).toContain("Why this programme");
+    expect(row.questions[0].answer).toBe("Essay 1");
   });
 
   it("reports the marker's figures, in the order the essays are asked", async () => {

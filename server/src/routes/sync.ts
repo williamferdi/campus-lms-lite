@@ -385,8 +385,13 @@ export async function syncReadRoutes(app: FastifyInstance) {
             pointsPossible: attempt.pointsPossible ?? mine.reduce((sum, question) => sum + question.points, 0),
             questions: mine.map((question) => {
               const result = results[question.id];
+              const answers = (attempt.answers ?? {}) as Record<string, unknown>;
               return {
                 position: question.position,
+                // The registrar shows the paper on the admissions record, so
+                // staff can read what was written without a second login.
+                prompt: question.promptMd,
+                answer: answers[question.id] ?? null,
                 points: question.points,
                 // A marker's figure wins over the automatic one, as everywhere
                 // else; null means nobody has marked it.
