@@ -38,6 +38,11 @@ describe("pages", () => {
     expect(r.body.page.bodyHtml).toContain('src="https://www.youtube-nocookie.com/embed/abc123def"');
   });
 
+  it("sends a referrer policy that lets YouTube embeds play (no-referrer causes YouTube Error 153)", async () => {
+    const res = await env.app.inject({ method: "GET", url: "/healthz" });
+    expect(res.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  });
+
   it("students and TAs: TA can edit content, student cannot", async () => {
     expect((await fx.s1.post(`/courses/${fx.courseId}/pages`, { title: "Mine" })).status).toBe(403);
     expect((await fx.ta.post(`/courses/${fx.courseId}/pages`, { title: "TA page" })).status).toBe(201);

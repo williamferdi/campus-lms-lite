@@ -32,7 +32,7 @@ export function ModuleItemPage() {
       <h1 className="mb-4 text-2xl font-semibold">{item.title}</h1>
       {item.embedUrl ? (
         <div className="overflow-hidden rounded-xl bg-black shadow">
-          <iframe src={item.embedUrl} title={item.title} className="aspect-video w-full" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen loading="lazy" />
+          <iframe src={item.embedUrl} title={item.title} className="aspect-video w-full" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen loading="lazy" referrerPolicy="strict-origin-when-cross-origin" />
         </div>
       ) : (
         <Card className="p-6">

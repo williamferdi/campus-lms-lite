@@ -63,6 +63,9 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       },
     },
     crossOriginEmbedderPolicy: false,
+    // YouTube's embedded player refuses to play without a referrer (Error 153). Other sites receive only
+    // the origin, never paths or query strings, so tokens in URLs still don't leak.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   });
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
