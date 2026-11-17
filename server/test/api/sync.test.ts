@@ -320,3 +320,13 @@ describe("reading exam results back", () => {
     expect(row.score).toBe(53);
   });
 });
+
+describe("embedded video", () => {
+  it("sends the origin to the video host, and never the path", async () => {
+    // helmet defaults to no-referrer, and YouTube then refuses to play with
+    // "Video player configuration error" (153), because it cannot tell which
+    // site is framing it. The path stays private either way.
+    const r = await env.app.inject({ method: "GET", url: "/api/v1/sync/whoami", headers: { authorization: `Bearer ${token}` } });
+    expect(r.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  });
+});

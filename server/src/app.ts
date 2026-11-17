@@ -64,6 +64,12 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
       },
     },
     crossOriginEmbedderPolicy: false,
+    // helmet defaults to `no-referrer`, which breaks embedded video: YouTube
+    // and Vimeo check which site is framing them, and with no Referer at all
+    // the player refuses with "Video player configuration error" (error 153).
+    // This sends the origin and never the path, so a lesson URL -- which can
+    // name a course and a student's place in it -- still does not leak.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   });
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
