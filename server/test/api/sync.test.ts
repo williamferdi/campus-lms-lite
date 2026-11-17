@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { enrollments, serviceTokens, users } from "../../src/db/schema.js";
+import { courses, enrollments, serviceTokens, users } from "../../src/db/schema.js";
 import { randomToken, sha256 } from "../../src/lib/crypto.js";
-import { createTestEnv, createUser, login, type TestEnv } from "../helpers.js";
+import { createTestEnv, createUser, login, standardCourse, type TestEnv } from "../helpers.js";
 
 let env: TestEnv;
 let token: string;
@@ -75,7 +75,7 @@ describe("who may call the sync endpoints", () => {
 
   it("refuses a signed-in person, however senior", async () => {
     // A stolen session must not be able to rewrite the whole roster.
-    const admin = await createUser(env, "Ada Admin", "admin");
+    const admin = await createUser(env, "Sole Admin", "admin");
     const client = await login(env, admin.email);
     expect((await client.get("/sync/whoami")).status).toBe(401);
     expect((await client.post("/sync/people", person())).status).toBe(401);
@@ -182,5 +182,141 @@ describe("syncing courses and enrolments", () => {
     });
     expect(r.status).toBe(404);
     expect(r.body.error.message).toContain("EDU-STU-NOPE");
+  });
+});
+
+describe("re-filing a person who changes identity", () => {
+  it("keeps the account and moves the key", async () => {
+    // An applicant is admitted: APP-2026-00014 becomes SIB-2026-0003, same
+    // person, same address, and the exam they already sat must come with them.
+    const made = await sync("POST", "/sync/people", person({ externalId: "APP-0001", email: "moving@sibbc.test" }));
+    expect(made.status).toBe(201);
+
+    const moved = await sync("POST", "/sync/people", {
+      ...person({ externalId: "SIB-0001", email: "moving@sibbc.test" }),
+      replacesExternalId: "APP-0001",
+    });
+
+    expect(moved.body.created).toBe(false);
+    expect(moved.body.user.id).toBe(made.body.user.id);
+    expect(moved.body.user.externalId).toBe("SIB-0001");
+    const rows = await env.database.db.select().from(users).where(eq(users.email, "moving@sibbc.test"));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("still refuses when nothing says they are the same person", async () => {
+    await sync("POST", "/sync/people", person({ externalId: "APP-0002", email: "staying@sibbc.test" }));
+    const r = await sync("POST", "/sync/people", person({ externalId: "SIB-0002", email: "staying@sibbc.test" }));
+    expect(r.status).toBe(409);
+  });
+});
+
+/** One set of people for the read tests: `standardCourse` names its users, so
+ *  building it twice in one database collides on the email index. */
+let fx: Awaited<ReturnType<typeof standardCourse>>;
+
+describe("reading progress back", () => {
+  const COURSE = "EDU-OFF-PROG";
+  const STUDENT = "EDU-STU-PROG";
+
+  beforeAll(async () => {
+    fx = await standardCourse(env);
+    await env.database.db.update(courses).set({ externalId: COURSE }).where(eq(courses.id, fx.courseId));
+    await env.database.db.update(users).set({ externalId: STUDENT }).where(eq(users.id, fx.users.s1.id));
+  });
+
+  it("is closed to a signed-in person, however senior", async () => {
+    const r = await fx.admin.get(`/sync/progress?personExternalId=${STUDENT}&courseExternalId=${COURSE}`);
+    expect(r.status).toBe(401);
+  });
+
+  it("a course that asks nothing of anybody is not complete", async () => {
+    // Otherwise an empty course would let a candidate sign to say they had read
+    // a manual that does not exist yet.
+    const r = await sync("GET", `/sync/progress?personExternalId=${STUDENT}&courseExternalId=${COURSE}`);
+    expect(r.status).toBe(200);
+    expect(r.body.required).toBe(0);
+    expect(r.body.complete).toBe(false);
+  });
+
+  it("reports completion once the required reading is done", async () => {
+    const page = (await fx.teacher.post(`/courses/${fx.courseId}/pages`, { title: "Welcome", bodyMd: "Read me", published: true })).body.page;
+    const module = (await fx.teacher.post(`/courses/${fx.courseId}/modules`, { title: "Orientation", published: true })).body.module;
+    await fx.teacher.post(`/modules/${module.id}/items`, { type: "page", refId: page.id, requirement: "must_view", published: true });
+
+    const before = await sync("GET", `/sync/progress?personExternalId=${STUDENT}&courseExternalId=${COURSE}`);
+    expect(before.body).toMatchObject({ required: 1, completed: 0, complete: false });
+
+    await fx.s1.get(`/pages/${page.id}`);
+
+    const after = await sync("GET", `/sync/progress?personExternalId=${STUDENT}&courseExternalId=${COURSE}`);
+    expect(after.body).toMatchObject({ required: 1, completed: 1, percent: 100, complete: true });
+  });
+
+  it("says which of the two it could not find", async () => {
+    const r = await sync("GET", `/sync/progress?personExternalId=EDU-STU-NOPE&courseExternalId=${COURSE}`);
+    expect(r.status).toBe(404);
+    expect(r.body.error.message).toContain("EDU-STU-NOPE");
+  });
+});
+
+describe("reading exam results back", () => {
+  let examCourseId: string;
+  let quizId: string;
+  let questionIds: string[];
+  const COURSE = "EDU-OFF-EXAM";
+  const CANDIDATE = "APP-EXAM-0001";
+
+  beforeAll(async () => {
+    // Its own course, as the entrance exam is: the candidate is enrolled here
+    // and nowhere else, which is the whole of their isolation.
+    examCourseId = (await fx.admin.post("/courses", { code: "ENTRANCE", name: "Entrance Exam" })).body.course.id;
+    await fx.admin.post(`/courses/${examCourseId}/enrollments`, { email: fx.users.teacher.email, role: "teacher" });
+    await fx.admin.post(`/courses/${examCourseId}/enrollments`, { email: fx.users.s2.email, role: "student" });
+    await fx.admin.post(`/courses/${examCourseId}/status`, { status: "published" });
+    await env.database.db.update(courses).set({ externalId: COURSE }).where(eq(courses.id, examCourseId));
+    await env.database.db.update(users).set({ externalId: CANDIDATE }).where(eq(users.id, fx.users.s2.id));
+
+    // The entrance exam: essays are short answers with no accepted answer, so
+    // every one of them falls to a marker.
+    const quiz = (await fx.teacher.post(`/courses/${examCourseId}/quizzes`, { title: "Entrance Exam — Essays", allowedAttempts: 1 })).body.quiz;
+    quizId = quiz.id;
+    questionIds = [];
+    for (const prompt of ["Why this programme?", "Describe your call.", "A passage that shaped you."]) {
+      const q = await fx.teacher.post(`/quizzes/${quizId}/questions`, { type: "short_answer", prompt, points: 25 });
+      questionIds.push(q.body.question.id);
+    }
+    await fx.teacher.patch(`/quizzes/${quizId}`, { published: true });
+  });
+
+  it("flags an attempt nobody has marked instead of calling it zero", async () => {
+    const attempt = (await fx.s2.post(`/quizzes/${quizId}/attempts`)).body.attempt;
+    await fx.s2.post(`/quiz-attempts/${attempt.id}/submit`, {
+      answers: Object.fromEntries(questionIds.map((id, i) => [id, `Essay ${i + 1}`])),
+    });
+
+    const r = await sync("GET", `/sync/quiz-results?courseExternalId=${COURSE}&personExternalId=${CANDIDATE}`);
+    expect(r.status).toBe(200);
+    expect(r.body.attempts).toHaveLength(1);
+    const [row] = r.body.attempts;
+    expect(row.awaitingMarking).toBe(true);
+    expect(row.person.externalId).toBe(CANDIDATE);
+    expect(row.pointsPossible).toBe(75);
+    expect(row.questions.map((q: { earned: number | null }) => q.earned)).toEqual([null, null, null]);
+  });
+
+  it("reports the marker's figures, in the order the essays are asked", async () => {
+    const attempts = await fx.teacher.get(`/quizzes/${quizId}/attempts`);
+    const attemptId = attempts.body.data[0].id;
+    await fx.teacher.put(`/quiz-attempts/${attemptId}/grade`, {
+      scores: { [questionIds[0]!]: 20, [questionIds[1]!]: 15, [questionIds[2]!]: 18 },
+    });
+
+    const r = await sync("GET", `/sync/quiz-results?courseExternalId=${COURSE}&personExternalId=${CANDIDATE}`);
+    const [row] = r.body.attempts;
+    expect(row.awaitingMarking).toBe(false);
+    expect(row.questions.map((q: { position: number }) => q.position)).toEqual([1, 2, 3]);
+    expect(row.questions.map((q: { earned: number }) => q.earned)).toEqual([20, 15, 18]);
+    expect(row.score).toBe(53);
   });
 });

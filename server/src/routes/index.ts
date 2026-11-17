@@ -14,7 +14,7 @@ import notificationRoutes from "./notifications.js";
 import pageRoutes from "./pages.js";
 import quizRoutes from "./quizzes.js";
 import submissionRoutes from "./submissions.js";
-import syncRoutes from "./sync.js";
+import syncRoutes, { syncReadRoutes } from "./sync.js";
 import userRoutes from "./users.js";
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -35,4 +35,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(notificationRoutes);
   await app.register(dashboardRoutes);
   await app.register(syncRoutes);
+  await app.register(syncReadRoutes);
 }

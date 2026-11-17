@@ -9,14 +9,24 @@
  * repeated sync repairs a row instead of creating a second one, and a failed run can simply be
  * run again. Callers hold a service token, never a session: see requireService.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { courses, enrollments, sections, terms, users } from "../db/schema.js";
+import {
+  courses,
+  enrollments,
+  quizAttempts,
+  quizQuestions,
+  quizzes,
+  sections,
+  terms,
+  users,
+} from "../db/schema.js";
 import { conflict, notFound } from "../lib/errors.js";
 import { parse, trimmed } from "../lib/http.js";
 import { audit } from "../services/audit.js";
 import { requireService } from "../services/policy.js";
+import { progressForUser } from "../services/progress.js";
 import type { AppContext, ServiceCaller } from "../types.js";
 import { issueToken, sortableNameOf, tokenUrl } from "./auth.js";
 import { createCourseRecord } from "./courses.js";
@@ -26,6 +36,14 @@ const externalId = trimmed(1, 140);
 
 const personBody = z.object({
   externalId,
+  /**
+   * The key this person used to be filed under, when the registrar re-files
+   * them: an applicant who is admitted stops being APP-2026-00014 and becomes
+   * SIB-2026-0003, with the same address and the same account. Without it the
+   * email below is already linked and the sync refuses, which is the right
+   * answer for every other case.
+   */
+  replacesExternalId: externalId.optional(),
   email: z.email(),
   name: trimmed(1, 200),
   role: z.enum(["admin", "instructor", "student"]),
@@ -118,6 +136,11 @@ export default async function syncRoutes(app: FastifyInstance) {
     const email = body.email.toLowerCase();
 
     let [row] = await ctx.db.select().from(users).where(eq(users.externalId, body.externalId));
+    if (!row && body.replacesExternalId) {
+      // Re-filing, not a new person: keep the account and move the key onto it,
+      // so an admitted applicant keeps the exam they already sat.
+      [row] = await ctx.db.select().from(users).where(eq(users.externalId, body.replacesExternalId));
+    }
     if (!row) {
       // No link yet: adopt the account already using this address, so somebody who signed up
       // here before the sync existed keeps their work instead of gaining a second account.
@@ -254,5 +277,125 @@ export default async function syncRoutes(app: FastifyInstance) {
     });
     reply.status(201);
     return { created: true, enrollment: describeEnrollment(created!) };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// reading back, for the registrar
+// ---------------------------------------------------------------------------
+
+/** The person and course a read is about, or 404 naming the one that is missing. */
+async function pairFor(ctx: AppContext, personExternalId: string, courseExternalId: string) {
+  const [person] = await ctx.db.select().from(users).where(eq(users.externalId, personExternalId));
+  if (!person) throw notFound(`Person ${personExternalId}`);
+  const [course] = await ctx.db.select().from(courses).where(eq(courses.externalId, courseExternalId));
+  if (!course) throw notFound(`Course ${courseExternalId}`);
+  return { person, course };
+}
+
+export async function syncReadRoutes(app: FastifyInstance) {
+  const ctx = app.ctx;
+
+  /**
+   * How far one person has got through one course.
+   *
+   * The registrar asks this before letting somebody sign to say they have read
+   * the orientation manual. `complete` is deliberately false when a course asks
+   * nothing of anybody: an empty course is not something a candidate can have
+   * read, and treating it as read would open the signature to everyone.
+   */
+  app.get("/sync/progress", async (req) => {
+    requireService(req);
+    const q = parse(
+      z.object({ personExternalId: externalId, courseExternalId: externalId }),
+      req.query,
+    );
+    const { person, course } = await pairFor(ctx, q.personExternalId, q.courseExternalId);
+    const { progress } = await progressForUser(ctx, course.id, person.id);
+    const { required, completed, percent } = progress.overall;
+    return {
+      person: { externalId: person.externalId, email: person.email },
+      course: { externalId: course.externalId, code: course.code },
+      required,
+      completed,
+      percent,
+      complete: required > 0 && completed === required,
+    };
+  });
+
+  /**
+   * Quiz attempts on one course, with what each answer earned.
+   *
+   * Questions come back in the order they are asked, because the caller matches
+   * them positionally -- an essay carries no key to match on. `awaitingMarking`
+   * is the distinction that matters: an unmarked attempt scores zero here and
+   * recording that as a result would tell a candidate they failed an exam
+   * nobody has read yet.
+   */
+  app.get("/sync/quiz-results", async (req) => {
+    requireService(req);
+    const q = parse(
+      z.object({ courseExternalId: externalId, personExternalId: externalId.optional() }),
+      req.query,
+    );
+    const [course] = await ctx.db.select().from(courses).where(eq(courses.externalId, q.courseExternalId));
+    if (!course) throw notFound(`Course ${q.courseExternalId}`);
+
+    const quizRows = await ctx.db.select().from(quizzes).where(eq(quizzes.courseId, course.id));
+    if (quizRows.length === 0) return { course: { externalId: course.externalId }, attempts: [] };
+
+    const quizIds = quizRows.map((row) => row.id);
+    const questions = await ctx.db
+      .select()
+      .from(quizQuestions)
+      .where(inArray(quizQuestions.quizId, quizIds))
+      .orderBy(asc(quizQuestions.position));
+
+    const filters = [inArray(quizAttempts.quizId, quizIds)];
+    if (q.personExternalId) {
+      const [person] = await ctx.db.select().from(users).where(eq(users.externalId, q.personExternalId));
+      if (!person) throw notFound(`Person ${q.personExternalId}`);
+      filters.push(eq(quizAttempts.userId, person.id));
+    }
+    const attempts = await ctx.db
+      .select({ attempt: quizAttempts, user: users })
+      .from(quizAttempts)
+      .innerJoin(users, eq(users.id, quizAttempts.userId))
+      .where(and(...filters))
+      .orderBy(asc(quizAttempts.attemptNumber));
+
+    return {
+      course: { externalId: course.externalId, code: course.code },
+      attempts: attempts
+        .filter((row) => row.attempt.status !== "in_progress")
+        .map(({ attempt, user }) => {
+          const results = (attempt.results ?? {}) as Record<
+            string,
+            { auto: number | null; manual: number | null; comment?: string }
+          >;
+          const mine = questions.filter((question) => question.quizId === attempt.quizId);
+          return {
+            person: { externalId: user.externalId, email: user.email, name: user.name },
+            quiz: { title: quizRows.find((row) => row.id === attempt.quizId)?.title ?? null },
+            attemptNumber: attempt.attemptNumber,
+            status: attempt.status,
+            awaitingMarking: attempt.status === "pending_review",
+            submittedAt: attempt.submittedAt,
+            score: attempt.score,
+            pointsPossible: attempt.pointsPossible ?? mine.reduce((sum, question) => sum + question.points, 0),
+            questions: mine.map((question) => {
+              const result = results[question.id];
+              return {
+                position: question.position,
+                points: question.points,
+                // A marker's figure wins over the automatic one, as everywhere
+                // else; null means nobody has marked it.
+                earned: result ? (result.manual ?? result.auto) : null,
+                comment: result?.comment ?? null,
+              };
+            }),
+          };
+        }),
+    };
   });
 }
