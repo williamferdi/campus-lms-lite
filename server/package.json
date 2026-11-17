@@ -13,7 +13,9 @@
     "db:migrate": "tsx --env-file-if-exists=../.env src/db/migrate-cli.ts",
     "db:seed": "tsx --env-file-if-exists=../.env src/db/seed-cli.ts",
     "create-admin": "tsx --env-file-if-exists=../.env src/db/create-admin-cli.ts",
-    "create-admin:prod": "node --env-file-if-exists=../.env dist/db/create-admin-cli.js"
+    "create-admin:prod": "node --env-file-if-exists=../.env dist/db/create-admin-cli.js",
+    "create-service-token": "tsx --env-file-if-exists=../.env src/db/create-service-token-cli.ts",
+    "create-service-token:prod": "node --env-file-if-exists=../.env dist/db/create-service-token-cli.js"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",

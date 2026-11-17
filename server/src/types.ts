@@ -13,6 +13,13 @@ export interface SessionUser {
   role: PlatformRole;
 }
 
+/** Another system calling the API with a service token: the registrar sync, not a person. */
+export interface ServiceCaller {
+  id: string;
+  orgId: string;
+  label: string;
+}
+
 export interface AppContext {
   db: Db;
   config: Config;
@@ -27,5 +34,6 @@ declare module "fastify" {
   interface FastifyRequest {
     user: SessionUser | null;
     authSession: { id: string; csrfToken: string } | null;
+    service: ServiceCaller | null;
   }
 }

@@ -116,7 +116,8 @@ export function permissionsOf(a: CourseAccess) {
 export async function createCourseRecord(
   ctx: AppContext,
   orgId: string,
-  createdById: string,
+  /** Null when a sync created the course: no person did. */
+  createdById: string | null,
   body: z.infer<typeof courseBody>,
 ) {
   const [course] = await ctx.db

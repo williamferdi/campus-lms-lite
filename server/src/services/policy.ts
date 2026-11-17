@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { FastifyRequest } from "fastify";
 import { courses, enrollments } from "../db/schema.js";
 import { forbidden, notFound, unauthorized } from "../lib/errors.js";
-import type { AppContext, SessionUser } from "../types.js";
+import type { AppContext, ServiceCaller, SessionUser } from "../types.js";
 
 export type CourseRole = "admin" | "teacher" | "ta" | "student";
 export type Course = typeof courses.$inferSelect;
@@ -27,6 +27,15 @@ export interface CourseAccess {
 export function requireUser(req: FastifyRequest): SessionUser {
   if (!req.user) throw unauthorized();
   return req.user;
+}
+
+/**
+ * The caller must be another system holding a service token, not a signed-in person. Keeps the
+ * sync endpoints off-limits to the browser: a stolen session cannot rewrite enrolments wholesale.
+ */
+export function requireService(req: FastifyRequest): ServiceCaller {
+  if (!req.service) throw unauthorized("This endpoint needs a service token.");
+  return req.service;
 }
 
 export function requireAdmin(req: FastifyRequest): SessionUser {

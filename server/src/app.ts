@@ -5,11 +5,11 @@ import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Config } from "./config.js";
 import type { Db } from "./db/client.js";
-import { authSessions, users } from "./db/schema.js";
+import { authSessions, serviceTokens, users } from "./db/schema.js";
 import { sha256 } from "./lib/crypto.js";
 import { AppError } from "./lib/errors.js";
 import { registerRoutes } from "./routes/index.js";
@@ -45,6 +45,7 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
   });
   app.decorateRequest("user", null);
   app.decorateRequest("authSession", null);
+  app.decorateRequest("service", null);
 
   await app.register(helmet, {
     contentSecurityPolicy: {
@@ -98,6 +99,24 @@ export async function buildApp(opts: BuildOptions): Promise<FastifyInstance> {
         req.authSession = { id: row.sessionId, csrfToken: row.csrfToken };
       }
     }
+    // ---- service token: another system, not a person. Bearer token, no cookie, so CSRF (which
+    // exists because browsers attach cookies automatically) does not apply. A token never
+    // becomes a `user`, so it cannot reach any endpoint meant for a signed-in person.
+    const authorization = req.headers.authorization;
+    if (!req.user && authorization?.startsWith("Bearer ")) {
+      const presented = authorization.slice("Bearer ".length).trim();
+      if (presented) {
+        const [row] = await opts.db
+          .select({ id: serviceTokens.id, orgId: serviceTokens.orgId, label: serviceTokens.label })
+          .from(serviceTokens)
+          .where(and(eq(serviceTokens.tokenHash, sha256(presented)), isNull(serviceTokens.revokedAt)));
+        if (row) {
+          req.service = { id: row.id, orgId: row.orgId, label: row.label };
+          await opts.db.update(serviceTokens).set({ lastUsedAt: new Date() }).where(eq(serviceTokens.id, row.id));
+        }
+      }
+    }
+
     if (req.authSession && !SAFE_METHODS.has(req.method) && req.url.startsWith("/api/")) {
       if (req.headers["x-csrf-token"] !== req.authSession.csrfToken) {
         throw new AppError(403, "csrf_failed", "Your session security token is missing or expired. Reload the page and try again.");

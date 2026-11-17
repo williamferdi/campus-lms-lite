@@ -24,6 +24,12 @@ const updatedAt = () =>
     .$onUpdate(() => new Date());
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 const score = (name: string) => numeric(name, { precision: 10, scale: 2, mode: "number" });
+/**
+ * The record's name in the registrar system that owns it (`EDU-REG-00012`), on rows a sync
+ * created. Null for anything created here. Unique, so a repeated sync updates the same row
+ * instead of making a second one; Postgres lets nulls repeat, so local rows are unaffected.
+ */
+const externalId = () => text("external_id");
 
 // ---------------------------------------------------------------- enums
 export const platformRole = pgEnum("platform_role", ["admin", "instructor", "student"]);
@@ -106,12 +112,14 @@ export const users = pgTable(
     timeZone: text("time_zone").notNull().default("UTC"),
     emailNotifications: boolean("email_notifications").notNull().default(true),
     lastLoginAt: ts("last_login_at"),
+    externalId: externalId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex("users_email_lower_idx").on(sql`lower(${t.email})`),
     index("users_org_idx").on(t.orgId),
+    uniqueIndex("users_external_idx").on(t.externalId),
   ],
 );
 
@@ -145,6 +153,28 @@ export const authTokens = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("auth_tokens_user_idx").on(t.userId)],
+);
+
+/**
+ * Credentials for another system, not a person: the registrar pushing people, courses and
+ * enrolments in. Only the SHA-256 of the token is stored, as for sessions and auth tokens, so
+ * a copy of this table cannot be used to call the API. Revoked by setting `revokedAt`, never
+ * by deleting the row, so the audit trail still resolves.
+ */
+export const serviceTokens = pgTable(
+  "service_tokens",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    label: text("label").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    lastUsedAt: ts("last_used_at"),
+    revokedAt: ts("revoked_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("service_tokens_org_idx").on(t.orgId)],
 );
 
 // ---------------------------------------------------------------- catalog
@@ -192,6 +222,7 @@ export const courses = pgTable(
     lateDeductionPercent: score("late_deduction_percent").notNull().default(10),
     lateFloorPercent: score("late_floor_percent").notNull().default(50),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    externalId: externalId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -199,6 +230,7 @@ export const courses = pgTable(
     index("courses_org_idx").on(t.orgId),
     index("courses_term_idx").on(t.termId),
     index("courses_status_idx").on(t.status),
+    uniqueIndex("courses_external_idx").on(t.externalId),
   ],
 );
 
@@ -229,12 +261,14 @@ export const enrollments = pgTable(
     role: courseRole("role").notNull(),
     status: enrollmentStatus("status").notNull().default("active"),
     lastActivityAt: ts("last_activity_at"),
+    externalId: externalId(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex("enrollments_course_user_idx").on(t.courseId, t.userId),
     index("enrollments_user_idx").on(t.userId),
+    uniqueIndex("enrollments_external_idx").on(t.externalId),
   ],
 );
 
