@@ -25,7 +25,8 @@
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "test:all": "npm test && npm run test:e2e",
     "create-admin": "npm run create-admin --workspace server --",
-    "create-service-token": "npm run create-service-token --workspace server --"
+    "create-service-token": "npm run create-service-token --workspace server --",
+    "import-admissions": "npm run import-admissions --workspace server --"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

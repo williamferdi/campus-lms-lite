@@ -15,7 +15,8 @@
     "create-admin": "tsx --env-file-if-exists=../.env src/db/create-admin-cli.ts",
     "create-admin:prod": "node --env-file-if-exists=../.env dist/db/create-admin-cli.js",
     "create-service-token": "tsx --env-file-if-exists=../.env src/db/create-service-token-cli.ts",
-    "create-service-token:prod": "node --env-file-if-exists=../.env dist/db/create-service-token-cli.js"
+    "create-service-token:prod": "node --env-file-if-exists=../.env dist/db/create-service-token-cli.js",
+    "import-admissions": "tsx --env-file-if-exists=../.env src/db/import-admissions-cli.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",
