@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { courses, enrollments, serviceTokens, users } from "../../src/db/schema.js";
+import { courses, enrollments, serviceTokens, terms as termsTable, users } from "../../src/db/schema.js";
 import { randomToken, sha256 } from "../../src/lib/crypto.js";
 import { createTestEnv, createUser, login, standardCourse, type TestEnv } from "../helpers.js";
 
@@ -330,5 +330,96 @@ describe("embedded video", () => {
     // site is framing it. The path stays private either way.
     const r = await env.app.inject({ method: "GET", url: "/api/v1/sync/whoami", headers: { authorization: `Bearer ${token}` } });
     expect(r.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  });
+});
+
+describe("reporting a removal, not making one", () => {
+  // The registrar deletes a Student or a Course Offering and tells this system
+  // so. Both write endpoints upsert, so without a guard "deactivate this
+  // person" would *create* an account for somebody who has just stopped
+  // existing over there -- which is exactly what clearing the demo data would
+  // have done.
+
+  it("does not create a person it has never heard of", async () => {
+    const before = await env.database.db.select().from(users);
+
+    const r = await sync("POST", "/sync/people", person({
+      externalId: "EDU-STU-GONE",
+      email: "gone@sibbc.test",
+      status: "deactivated",
+      onlyIfPresent: true,
+    }));
+
+    expect(r.status).toBe(200);
+    expect(r.body.found).toBe(false);
+    expect(r.body.created).toBe(false);
+    const after = await env.database.db.select().from(users);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("still deactivates a person it does know", async () => {
+    await sync("POST", "/sync/people", person({ externalId: "EDU-STU-HERE", email: "here@sibbc.test" }));
+
+    const r = await sync("POST", "/sync/people", person({
+      externalId: "EDU-STU-HERE",
+      email: "here@sibbc.test",
+      status: "deactivated",
+      onlyIfPresent: true,
+    }));
+
+    expect(r.status).toBe(200);
+    expect(r.body.created).toBe(false);
+    const [row] = await env.database.db.select().from(users).where(eq(users.externalId, "EDU-STU-HERE"));
+    expect(row?.status).toBe("deactivated");
+  });
+
+  it("does not create a course it has never heard of", async () => {
+    const before = await env.database.db.select().from(courses);
+
+    const r = await sync("POST", "/sync/courses", course({
+      externalId: "EDU-OFF-GONE",
+      status: "archived",
+      onlyIfPresent: true,
+    }));
+
+    expect(r.status).toBe(200);
+    expect(r.body.found).toBe(false);
+    const after = await env.database.db.select().from(courses);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("leaves no term behind when it declines to create the course", async () => {
+    // termIdFor creates the term if it is new, so the bail-out has to come
+    // first or a no-op litters.
+    const r = await sync("POST", "/sync/courses", course({
+      externalId: "EDU-OFF-GONE-2",
+      term: "9999-TZ",
+      status: "archived",
+      onlyIfPresent: true,
+    }));
+
+    expect(r.body.found).toBe(false);
+    const terms = await env.database.db.select().from(termsTable);
+    expect(terms.some((t) => t.name === "9999-TZ")).toBe(false);
+  });
+
+  it("still archives a course it does know", async () => {
+    await sync("POST", "/sync/courses", course({ externalId: "EDU-OFF-HERE" }));
+
+    const r = await sync("POST", "/sync/courses", course({
+      externalId: "EDU-OFF-HERE",
+      status: "archived",
+      onlyIfPresent: true,
+    }));
+
+    expect(r.status).toBe(200);
+    const [row] = await env.database.db.select().from(courses).where(eq(courses.externalId, "EDU-OFF-HERE"));
+    expect(row?.status).toBe("archived");
+  });
+
+  it("creates as before when the flag is absent", async () => {
+    const r = await sync("POST", "/sync/people", person({ externalId: "EDU-STU-NEW", email: "new@sibbc.test" }));
+    expect(r.status).toBe(201);
+    expect(r.body.created).toBe(true);
   });
 });

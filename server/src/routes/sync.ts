@@ -48,6 +48,11 @@ const personBody = z.object({
   name: trimmed(1, 200),
   role: z.enum(["admin", "instructor", "student"]),
   status: z.enum(["active", "deactivated"]).optional(),
+  // Update, but never create. The registrar uses this when it is reporting that
+  // somebody has been *removed* there: without it this endpoint would upsert,
+  // and deactivating a deleted student would create an account here for
+  // somebody who has just stopped existing over there.
+  onlyIfPresent: z.boolean().optional(),
 });
 
 const courseBody = z.object({
@@ -56,6 +61,8 @@ const courseBody = z.object({
   name: trimmed(1, 200),
   term: trimmed(1, 120).optional(),
   status: z.enum(["unpublished", "published", "archived"]).optional(),
+  // As above: archiving a deleted offering must not conjure the course.
+  onlyIfPresent: z.boolean().optional(),
 });
 
 const enrollmentBody = z.object({
@@ -151,6 +158,12 @@ export default async function syncRoutes(app: FastifyInstance) {
       row = byEmail;
     }
 
+    if (!row && body.onlyIfPresent) {
+      // Nothing to update and nothing to create. Said plainly so the caller can
+      // tell this apart from a write it thought it made.
+      return { created: false, found: false, user: null, activationUrl: null };
+    }
+
     // An administrator here is never demoted by a sync: the registrar does not know who
     // administers this system, and locking everyone out would be the cost of getting it wrong.
     const role = row?.role === "admin" ? "admin" : body.role;
@@ -189,9 +202,14 @@ export default async function syncRoutes(app: FastifyInstance) {
   app.post("/sync/courses", async (req, reply) => {
     const caller = requireService(req);
     const body = parse(courseBody, req.body);
-    const termId = await termIdFor(ctx, caller.orgId, body.term);
 
     const [existing] = await ctx.db.select().from(courses).where(eq(courses.externalId, body.externalId));
+    if (!existing && body.onlyIfPresent) {
+      return { created: false, found: false, course: null };
+    }
+    // After the bail-out on purpose: this creates the term if it is new, and a
+    // no-op must not leave one behind.
+    const termId = await termIdFor(ctx, caller.orgId, body.term);
     if (existing) {
       const [updated] = await ctx.db
         .update(courses)
