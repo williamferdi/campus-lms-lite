@@ -423,3 +423,114 @@ describe("reporting a removal, not making one", () => {
     expect(r.body.created).toBe(true);
   });
 });
+
+describe("reading course results back", () => {
+  const COURSE = "EDU-OFF-GRADES";
+  const STUDENT = "SIB-2026-0099";
+  const REGISTRATION = "SIB-2026-0099-MDIV-EDU-OFF-GRADES";
+  const CLASSMATE = "SIB-2026-0100";
+  const CLASSMATE_REG = "SIB-2026-0100-MDIV-EDU-OFF-GRADES";
+  let courseId: string;
+  let studentId: string;
+  let paper: string;
+  let reflection: string;
+
+  const read = async (person?: string) =>
+    (await sync("GET", `/sync/grades?courseExternalId=${COURSE}${person ? `&personExternalId=${person}` : ""}`)).body;
+  const only = async (person: string) => (await read(person)).students[0];
+
+  beforeAll(async () => {
+    // Everything arrives the way the registrar sends it.
+    await sync("POST", "/sync/courses", course({ externalId: COURSE, code: "HIST501", name: "History of Christianity", term: "2026-T3" }));
+    await sync("POST", "/sync/people", person({ externalId: STUDENT, email: "grade.probe@sibbc.test", name: "Grade Probe" }));
+    await sync("POST", "/sync/enrollments", { externalId: REGISTRATION, personExternalId: STUDENT, courseExternalId: COURSE, role: "student" });
+
+    const [row] = await env.database.db.select().from(courses).where(eq(courses.externalId, COURSE));
+    courseId = row!.id;
+    const [me] = await env.database.db.select().from(users).where(eq(users.externalId, STUDENT));
+    studentId = me!.id;
+
+    await fx.admin.post(`/courses/${courseId}/enrollments`, { email: fx.users.teacher.email, role: "teacher" });
+    await fx.admin.post(`/courses/${courseId}/status`, { status: "published" });
+
+    // Two equal pieces of work, so the arithmetic in the assertions is legible.
+    // The paper is marked `postManually`, because that is the only way a mark
+    // is ever held back here: left to itself this LMS releases a grade the
+    // moment it is entered.
+    paper = (
+      await fx.teacher.post(`/courses/${courseId}/assignments`, {
+        title: "Term Paper",
+        pointsPossible: 100,
+        published: true,
+        postManually: true,
+        submissionTypes: ["online_text_entry"],
+      })
+    ).body.assignment.id;
+    reflection = (await fx.teacher.post(`/courses/${courseId}/assignments`, { title: "Reflection", pointsPossible: 100, published: true })).body.assignment.id;
+  });
+
+  it("refuses a course it has never heard of", async () => {
+    expect((await sync("GET", "/sync/grades?courseExternalId=EDU-OFF-NOPE")).status).toBe(404);
+  });
+
+  it("reports nothing earned before anybody marks anything", async () => {
+    const mine = await only(STUDENT);
+    expect(mine.enrollmentExternalId).toBe(REGISTRATION);
+    expect(mine.assignments).toBe(2);
+    expect(mine.posted).toBe(0);
+    expect(mine.current.percent).toBeNull();
+    expect(mine.final.percent).toBe(0);
+  });
+
+  it("withholds a mark that has been graded but not released", async () => {
+    await fx.teacher.put(`/assignments/${paper}/submissions/${studentId}/grade`, { grade: "80" });
+    const mine = await only(STUDENT);
+    expect(mine.gradedUnposted).toBe(1);
+    expect(mine.posted).toBe(0);
+    // Neither total may show it: the student cannot see it yet either.
+    expect(mine.current.percent).toBeNull();
+    expect(mine.final.percent).toBe(0);
+  });
+
+  it("separates the running average from the end-of-course figure", async () => {
+    await fx.teacher.post(`/assignments/${paper}/post-grades`);
+    const mine = await only(STUDENT);
+    expect(mine.posted).toBe(1);
+    expect(mine.gradedUnposted).toBe(0);
+    // 80 of the 100 marked so far, but 80 of the 200 the course is worth. This
+    // is the whole reason both are sent: recording `final` here would put 40%
+    // on a transcript for a course half of which nobody has marked.
+    expect(mine.current.percent).toBe(80);
+    expect(mine.final.percent).toBe(40);
+  });
+
+  it("agrees with itself once every piece of work is released", async () => {
+    await fx.teacher.put(`/assignments/${reflection}/submissions/${studentId}/grade`, { grade: "60" });
+    await fx.teacher.post(`/assignments/${reflection}/post-grades`);
+    const mine = await only(STUDENT);
+    expect(mine.posted).toBe(2);
+    expect(mine.current.percent).toBe(70);
+    expect(mine.final.percent).toBe(70);
+  });
+
+  it("counts work that is waiting for a marker", async () => {
+    // A classmate who hands something in and waits. `awaitingMarking` is what
+    // stops the registrar recording a result mid-marking.
+    await sync("POST", "/sync/people", person({ externalId: CLASSMATE, email: fx.users.ta.email, name: fx.users.ta.name }));
+    await sync("POST", "/sync/enrollments", { externalId: CLASSMATE_REG, personExternalId: CLASSMATE, courseExternalId: COURSE, role: "student" });
+    await fx.ta.post(`/assignments/${paper}/submit`, { submissionType: "online_text_entry", body: "Mine" });
+
+    const theirs = await only(CLASSMATE);
+    expect(theirs.awaitingMarking).toBe(1);
+    expect(theirs.current.percent).toBeNull();
+  });
+
+  it("lists only enrolments the registrar made, and counts the rest", async () => {
+    // Somebody enrolled by hand over here has no registration, no fee and no
+    // transcript. Dropping them silently would hide that; the count does not.
+    await fx.admin.post(`/courses/${courseId}/enrollments`, { email: fx.users.outsider.email, role: "student" });
+    const all = await read();
+    expect(all.unmanagedStudents).toBe(1);
+    expect(all.students.map((s: { enrollmentExternalId: string }) => s.enrollmentExternalId).sort()).toEqual([REGISTRATION, CLASSMATE_REG]);
+  });
+});

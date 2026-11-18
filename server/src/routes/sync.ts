@@ -9,7 +9,7 @@
  * repeated sync repairs a row instead of creating a second one, and a failed run can simply be
  * run again. Callers hold a service token, never a session: see requireService.
  */
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -25,6 +25,7 @@ import {
 import { conflict, notFound } from "../lib/errors.js";
 import { parse, trimmed } from "../lib/http.js";
 import { audit } from "../services/audit.js";
+import { cellFor, loadGradeData, totalsFor } from "../services/grading.js";
 import { requireService } from "../services/policy.js";
 import { progressForUser } from "../services/progress.js";
 import type { AppContext, ServiceCaller } from "../types.js";
@@ -419,6 +420,115 @@ export async function syncReadRoutes(app: FastifyInstance) {
             }),
           };
         }),
+    };
+  });
+
+  /**
+   * Course results on one course, for the registrar to put on a transcript.
+   *
+   * This reports; it does not decide. Whether a figure is final is the
+   * registrar's judgement -- it knows when a term ended and we do not -- so
+   * both totals are given and the caller picks:
+   *
+   * - `current` counts only work that has been marked AND released. It is the
+   *   running average, and it rises as marking happens.
+   * - `final` treats unreleased and unsubmitted work as zero. It is only the
+   *   truth once the course is over.
+   *
+   * `awaitingMarking` and `gradedUnposted` are the reason both are needed. A
+   * course still being marked has a `final` that understates it, sometimes
+   * badly, and recording that as a result would tell a student they failed a
+   * course nobody has finished reading -- the same mistake the entrance exam
+   * pull refuses to make with an unmarked essay. A caller that records a mark
+   * while either count is above zero is reading this wrongly.
+   *
+   * Only enrolments the registrar created are listed: `externalId` is its own
+   * registration name, and an enrolment made by hand here has none. Those are
+   * counted as `unmanagedStudents` rather than dropped silently, because a
+   * student being taught and marked outside the registrar is something it
+   * should be able to notice -- there is no fee, no eligibility check and no
+   * transcript behind them.
+   */
+  app.get("/sync/grades", async (req) => {
+    requireService(req);
+    const q = parse(
+      z.object({ courseExternalId: externalId, personExternalId: externalId.optional() }),
+      req.query,
+    );
+    const [course] = await ctx.db
+      .select()
+      .from(courses)
+      .where(eq(courses.externalId, q.courseExternalId));
+    if (!course) throw notFound(`Course ${q.courseExternalId}`);
+
+    // An inactive enrolment is a withdrawal or an unpaid seat; it has no
+    // result to report. A completed one does -- that is the ordinary state of
+    // a finished course.
+    const enrolled = and(
+      eq(enrollments.courseId, course.id),
+      eq(enrollments.role, "student"),
+      ne(enrollments.status, "inactive"),
+    );
+
+    const [{ n: unmanagedStudents } = { n: 0 }] = await ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(enrollments)
+      .where(and(enrolled, sql`${enrollments.externalId} is null`));
+
+    const filters = [enrolled, isNotNull(enrollments.externalId)];
+    if (q.personExternalId) filters.push(eq(users.externalId, q.personExternalId));
+
+    const rows = await ctx.db
+      .select({
+        userId: users.id,
+        email: users.email,
+        name: users.name,
+        personExternalId: users.externalId,
+        enrollmentExternalId: enrollments.externalId,
+        enrollmentStatus: enrollments.status,
+      })
+      .from(enrollments)
+      .innerJoin(users, eq(users.id, enrollments.userId))
+      .where(and(...filters))
+      .orderBy(asc(users.sortableName));
+
+    // One load for the whole class, not one per student: this database is a
+    // long way from the server that asks.
+    const data = await loadGradeData(
+      ctx,
+      course,
+      rows.map((row) => row.userId),
+      { includeUnpublished: false },
+    );
+    const now = new Date();
+
+    return {
+      course: { externalId: course.externalId, code: course.code, status: course.status },
+      unmanagedStudents,
+      students: rows.map((row) => {
+        const totals = totalsFor(course, data, row.userId, true);
+        const cells = data.assignments.map((a) =>
+          cellFor(
+            a,
+            data.submissions.find((s) => s.assignmentId === a.id && s.userId === row.userId),
+            now,
+            true,
+          ),
+        );
+        return {
+          personExternalId: row.personExternalId,
+          enrollmentExternalId: row.enrollmentExternalId,
+          email: row.email,
+          name: row.name,
+          enrollmentStatus: row.enrollmentStatus,
+          current: totals.current,
+          final: totals.final,
+          assignments: data.assignments.length,
+          posted: cells.filter((cell) => cell.posted).length,
+          awaitingMarking: cells.filter((cell) => cell.needsGrading).length,
+          gradedUnposted: cells.filter((cell) => cell.graded && !cell.posted).length,
+        };
+      }),
     };
   });
 }
