@@ -13,6 +13,52 @@ import { courseColor, usePref } from "../../lib/ui-prefs";
 import type { Course, Department, Paged, Term } from "../../lib/types";
 
 /**
+ * The level and programme filters, shared by every list that shows courses.
+ *
+ * Each select is hidden when its list is empty, so a system the registrar has
+ * never synced to shows no dead filters. The options are fetched here rather
+ * than passed in: both lists then share one cached request, and neither can
+ * drift from the other by offering a different set.
+ */
+export function RegistrarFilters({
+  level,
+  program,
+  onLevel,
+  onProgram,
+}: {
+  level: string;
+  program: string;
+  onLevel: (value: string) => void;
+  onProgram: (value: string) => void;
+}) {
+  const facets = useApi<{ levels: string[]; programs: string[] }>("/courses/facets");
+  return (
+    <>
+      {!!facets.data?.levels.length && (
+        <Select aria-label="Filter by level" value={level} onChange={(e) => onLevel(e.target.value)}>
+          <option value="">All levels</option>
+          {facets.data.levels.map((l) => (
+            <option key={l} value={l}>
+              Level {l}
+            </option>
+          ))}
+        </Select>
+      )}
+      {!!facets.data?.programs.length && (
+        <Select aria-label="Filter by programme" value={program} onChange={(e) => onProgram(e.target.value)}>
+          <option value="">All programmes</option>
+          {facets.data.programs.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </Select>
+      )}
+    </>
+  );
+}
+
+/**
  * The registrar's academic level and the programmes a course counts towards.
  *
  * Read-only wherever it appears: both arrive with the course offering and are
@@ -155,7 +201,6 @@ export function CoursesPage() {
   const [creating, setCreating] = useState(false);
   const [view, setView] = usePref<"cards" | "list">("coursesView", "list");
   const terms = useApi<{ data: Term[] }>("/terms");
-  const facets = useApi<{ levels: string[]; programs: string[] }>("/courses/facets");
   const q = useApi<Paged<Course>>(`/courses${qs({ q: search, status, termId, level, program, scope, page, perPage: 12 })}`, { placeholderData: (prev) => prev });
   const canCreate = user.role !== "student";
 
@@ -190,28 +235,12 @@ export function CoursesPage() {
             </option>
           ))}
         </Select>
-        {/* Only offered when the registrar has actually sent some. A system
-            with no synced courses should not show two dead filters. */}
-        {!!facets.data?.levels.length && (
-          <Select aria-label="Filter by level" value={level} onChange={(e) => (setLevel(e.target.value), setPage(1))}>
-            <option value="">All levels</option>
-            {facets.data.levels.map((l) => (
-              <option key={l} value={l}>
-                Level {l}
-              </option>
-            ))}
-          </Select>
-        )}
-        {!!facets.data?.programs.length && (
-          <Select aria-label="Filter by programme" value={program} onChange={(e) => (setProgram(e.target.value), setPage(1))}>
-            <option value="">All programmes</option>
-            {facets.data.programs.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </Select>
-        )}
+        <RegistrarFilters
+          level={level}
+          program={program}
+          onLevel={(v) => (setLevel(v), setPage(1))}
+          onProgram={(v) => (setProgram(v), setPage(1))}
+        />
         {user.role === "admin" && (
           <Select aria-label="Scope" value={scope} onChange={(e) => (setScope(e.target.value as "mine" | "all"), setPage(1))}>
             <option value="all">All courses</option>

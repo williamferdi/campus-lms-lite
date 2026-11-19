@@ -11,7 +11,7 @@ import { useUser } from "../../lib/auth";
 import { formatDate, formatDateTime, fromLocalInput, relative, roleLabel, toLocalInput } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
 import type { AuditEvent, Course, Department, Paged, Term, User } from "../../lib/types";
-import { CreateCourseDialog, RegistrarTags } from "../courses/CoursesPage";
+import { CreateCourseDialog, RegistrarFilters, RegistrarTags } from "../courses/CoursesPage";
 
 export function AdminLayout() {
   const tabs = [
@@ -339,10 +339,12 @@ export function AdminCourses() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [termId, setTermId] = useState("");
+  const [level, setLevel] = useState("");
+  const [program, setProgram] = useState("");
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const terms = useApi<{ data: Term[] }>("/terms");
-  const q = useApi<Paged<Course>>(`/courses${qs({ scope: "all", q: search, status, termId, page, perPage: 20 })}`, { placeholderData: (p) => p });
+  const q = useApi<Paged<Course>>(`/courses${qs({ scope: "all", q: search, status, termId, level, program, page, perPage: 20 })}`, { placeholderData: (p) => p });
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -357,13 +359,22 @@ export function AdminCourses() {
           <option value="">All terms</option>
           {terms.data?.data.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </Select>
+        <RegistrarFilters
+          level={level}
+          program={program}
+          onLevel={(v) => (setLevel(v), setPage(1))}
+          onProgram={(v) => (setProgram(v), setPage(1))}
+        />
         <Button className="ml-auto" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New course</Button>
       </div>
       <Card>
         <Loadable query={q}>
           {(d) =>
             d.data.length === 0 ? (
-              <EmptyState title="No courses found" />
+              <EmptyState
+                title="No courses found"
+                description={search || status || termId || level || program ? "Try clearing the filters." : undefined}
+              />
             ) : (
               <>
                 <Table>
