@@ -701,3 +701,24 @@ describe("a second activation link, when the first one lapsed", () => {
     expect(r.status).toBe(401);
   });
 });
+
+describe("the not-found handler keeps the message the registrar reads", () => {
+  // The registrar cannot tell "I do not serve that address" from "I have never
+  // heard of that person" by status or code: this handler and the app's own
+  // notFound() both answer 404 with code "not_found". Only the message differs,
+  // so it keys on this exact string -- see campus_lms.ROUTE_MISSING on that
+  // side. An LMS that has not been restarted since an endpoint was added would
+  // otherwise report itself as a candidate who does not exist.
+  it("answers an address it does not serve with the string the registrar keys on", async () => {
+    const r = await sync("POST", "/sync/people/EDU-APP-9001/no-such-endpoint");
+    expect(r.status).toBe(404);
+    expect(r.body.error.code).toBe("not_found");
+    expect(r.body.error.message).toBe("Route not found.");
+  });
+
+  it("says something different when it is the person it cannot find", async () => {
+    const r = await sync("POST", "/sync/people/EDU-APP-NOBODY-AT-ALL/activation-link");
+    expect(r.status).toBe(404);
+    expect(r.body.error.message).not.toBe("Route not found.");
+  });
+});
