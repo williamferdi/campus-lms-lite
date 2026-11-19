@@ -11,7 +11,7 @@ import { useUser } from "../../lib/auth";
 import { formatDate, formatDateTime, fromLocalInput, relative, roleLabel, toLocalInput } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
 import type { AuditEvent, Course, Department, Paged, Term, User } from "../../lib/types";
-import { CreateCourseDialog } from "../courses/CoursesPage";
+import { CreateCourseDialog, RegistrarTags } from "../courses/CoursesPage";
 
 export function AdminLayout() {
   const tabs = [
@@ -367,12 +367,16 @@ export function AdminCourses() {
             ) : (
               <>
                 <Table>
-                  <thead><tr><th>Course</th><th>Term</th><th>Department</th><th>Teachers</th><th className="text-right">Students</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Course</th><th>Term</th><th>Level &amp; programmes</th><th>Department</th><th>Teachers</th><th className="text-right">Students</th><th>Status</th></tr></thead>
                   <tbody>
                     {d.data.map((c) => (
                       <tr key={c.id}>
                         <td><Link to={`/courses/${c.id}`} className="font-medium hover:text-brand-700">{c.code}</Link> <span className="text-slate-500">{c.name}</span></td>
                         <td>{c.termName ?? "—"}</td>
+                        {/* Em dash, not an empty cell: a course the registrar
+                            does not own has nothing to say here, and a blank
+                            reads as data that failed to load. */}
+                        <td>{c.level || c.programs.length ? <RegistrarTags course={c} /> : "—"}</td>
                         <td>{c.departmentName ?? "—"}</td>
                         <td className="text-slate-600">{c.teachers.join(", ") || <span className="text-amber-700">None</span>}</td>
                         <td className="text-right">{c.studentCount}</td>

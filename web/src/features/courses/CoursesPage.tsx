@@ -12,6 +12,34 @@ import { useApi, useInvalidate } from "../../lib/query";
 import { courseColor, usePref } from "../../lib/ui-prefs";
 import type { Course, Department, Paged, Term } from "../../lib/types";
 
+/**
+ * The registrar's academic level and the programmes a course counts towards.
+ *
+ * Read-only wherever it appears: both arrive with the course offering and are
+ * not ours to edit. A course created by hand in this system has neither, and
+ * then nothing is drawn — an empty row of chips would suggest the registrar
+ * had said something about a course it has never heard of.
+ */
+export function RegistrarTags({
+  course,
+  className,
+}: {
+  course: Pick<Course, "level" | "programs">;
+  className?: string;
+}) {
+  if (!course.level && course.programs.length === 0) return null;
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className ?? ""}`}>
+      {course.level && <Badge tone="brand">Level {course.level}</Badge>}
+      {course.programs.map((programme) => (
+        <Badge key={programme} tone="gray">
+          {programme}
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
 export function CourseFormFields({
   value,
   onChange,
@@ -203,7 +231,10 @@ export function CoursesPage() {
                                 {c.name}
                               </Link>
                             </span>
-                            <span className="ml-5.5 block text-xs text-slate-500">{c.code}</span>
+                            <span className="ml-5.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                              {c.code}
+                              <RegistrarTags course={c} />
+                            </span>
                           </td>
                           <td>{c.termName ?? "—"}</td>
                           <td>{c.teachers.join(", ") || "—"}</td>
@@ -232,6 +263,7 @@ export function CoursesPage() {
                       <span className="text-xs text-slate-500">
                         {[c.termName, c.departmentName].filter(Boolean).join(" · ") || "No term"}
                       </span>
+                      <RegistrarTags course={c} className="pt-0.5" />
                       <span className="mt-auto pt-2 text-xs text-slate-500">
                         {c.teachers.length ? c.teachers.join(", ") : "No teacher assigned"} · {c.studentCount} students
                         {c.role && ` · You: ${roleLabel(c.role)}`}
