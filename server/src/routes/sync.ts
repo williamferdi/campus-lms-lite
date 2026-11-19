@@ -22,7 +22,7 @@ import {
   terms,
   users,
 } from "../db/schema.js";
-import { conflict, notFound } from "../lib/errors.js";
+import { conflict, notFound, unprocessable } from "../lib/errors.js";
 import { parse, trimmed } from "../lib/http.js";
 import { audit } from "../services/audit.js";
 import { cellFor, loadGradeData, totalsFor } from "../services/grading.js";
@@ -222,6 +222,40 @@ export default async function syncRoutes(app: FastifyInstance) {
         : null;
     reply.status(201);
     return { created: true, user: describePerson(created!), activationUrl };
+  });
+
+  /**
+   * A fresh activation link for somebody the registrar created here.
+   *
+   * `/sync/people` hands one out only when it creates the account, because issuing a token
+   * invalidates the one before it and a routine re-sync would otherwise break the link the
+   * person was about to use. But that link lasts seven days, and the registrar's own resend
+   * button has to be able to send a working one after that -- so asking for a new link is a
+   * deliberate act with its own endpoint rather than a side effect of a sync.
+   *
+   * Activation only. Somebody already active has chosen a password, and giving a service token
+   * the power to mint password-reset links for live accounts is a far larger thing than letting
+   * it finish an onboarding that was never completed. Those people use Forgot password.
+   */
+  app.post("/sync/people/:externalId/activation-link", async (req) => {
+    const caller = requireService(req);
+    const { externalId: id } = parse(z.object({ externalId }), req.params);
+
+    const [row] = await ctx.db
+      .select()
+      .from(users)
+      .where(and(eq(users.orgId, caller.orgId), eq(users.externalId, id)));
+    if (!row) throw notFound("Person");
+
+    if (row.status !== "pending") {
+      throw unprocessable(
+        `${row.email} has already set a password, so there is nothing to activate. They can use Forgot password to choose a new one.`,
+      );
+    }
+
+    const url = tokenUrl(ctx, "activation", await issueToken(ctx.db, row.id, "activation"));
+    await trace(ctx, caller, "sync.person.activation_link_issued", "user", row.id, { externalId: id });
+    return { url, expiresInHours: 168 };
   });
 
   app.post("/sync/courses", async (req, reply) => {

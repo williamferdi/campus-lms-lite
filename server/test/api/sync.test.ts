@@ -654,3 +654,50 @@ describe("filtering the course list by level and programme", () => {
     expect(r.body).toHaveProperty("levels");
   });
 });
+
+describe("a second activation link, when the first one lapsed", () => {
+  // The registrar's "resend" button needs a working link, and /sync/people
+  // deliberately hands one out only on creation -- a token issued twice
+  // invalidates the first, and a routine re-sync would break the link the
+  // candidate was about to use. So asking is a deliberate act of its own.
+
+  it("issues a fresh one for somebody who never activated", async () => {
+    await sync("POST", "/sync/people", person({ externalId: "EDU-APP-9001", email: "late.candidate@sibbc.test" }));
+
+    const r = await sync("POST", "/sync/people/EDU-APP-9001/activation-link");
+    expect(r.status).toBe(200);
+    expect(r.body.url).toContain("/activate?token=");
+    expect(r.body.expiresInHours).toBe(168);
+  });
+
+  it("gives a different link each time it is asked", async () => {
+    const first = await sync("POST", "/sync/people/EDU-APP-9001/activation-link");
+    const second = await sync("POST", "/sync/people/EDU-APP-9001/activation-link");
+    expect(second.body.url).not.toBe(first.body.url);
+  });
+
+  it("refuses for somebody who has already set a password", async () => {
+    // A service token may finish an onboarding nobody completed. Minting
+    // password resets for live accounts is a much larger power, and those
+    // people have Forgot password.
+    const active = await createUser(env, "Settled Student", "student");
+    await env.database.db
+      .update(users)
+      .set({ externalId: "EDU-APP-9002" })
+      .where(eq(users.id, active.id));
+
+    const r = await sync("POST", "/sync/people/EDU-APP-9002/activation-link");
+    expect(r.status).toBe(422);
+    expect(r.body.error.message).toContain("Forgot password");
+  });
+
+  it("says plainly when it has never heard of them", async () => {
+    const r = await sync("POST", "/sync/people/EDU-APP-NOBODY/activation-link");
+    expect(r.status).toBe(404);
+  });
+
+  it("is closed to anyone without a service token", async () => {
+    const r = await sync("POST", "/sync/people/EDU-APP-9001/activation-link", undefined, "not-a-real-token");
+    expect(r.status).toBe(401);
+  });
+});
