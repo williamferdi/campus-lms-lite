@@ -34,6 +34,9 @@ export interface Course {
   termName: string | null;
   departmentId: string | null;
   departmentName: string | null;
+  /** The registrar's academic level and programmes. Mirrored, never edited here. */
+  level: string | null;
+  programs: string[];
   imageUrl: string | null;
   teachers: string[];
   studentCount: number;

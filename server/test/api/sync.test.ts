@@ -534,3 +534,60 @@ describe("reading course results back", () => {
     expect(all.students.map((s: { enrollmentExternalId: string }) => s.enrollmentExternalId).sort()).toEqual([REGISTRATION, CLASSMATE_REG]);
   });
 });
+
+describe("the registrar's level and programmes ride with the course", () => {
+  const COURSE = "EDU-OFF-LEVEL";
+
+  const push = (over: Record<string, unknown> = {}) =>
+    sync("POST", "/sync/courses", course({ externalId: COURSE, code: "BIST502", name: "Intro to OT", ...over }));
+
+  const read = async () => {
+    const [row] = await env.database.db.select().from(courses).where(eq(courses.externalId, COURSE));
+    return row!;
+  };
+
+  it("carries them in on creation", async () => {
+    const r = await push({ level: "2", programs: ["MDIV", "GDCS"] });
+    expect(r.status).toBe(201);
+    expect(r.body.course.level).toBe("2");
+    expect(r.body.course.programs).toEqual(["MDIV", "GDCS"]);
+    const row = await read();
+    expect(row.level).toBe("2");
+    expect(row.programs).toEqual(["MDIV", "GDCS"]);
+  });
+
+  it("updates them when the registrar corrects the catalogue", async () => {
+    const r = await push({ level: "3", programs: ["MDIV"] });
+    expect(r.body.course.level).toBe("3");
+    expect((await read()).programs).toEqual(["MDIV"]);
+  });
+
+  it("lets a course stop counting towards a programme", async () => {
+    // Sent as empty, not left out: the registrar has to be able to say that a
+    // course now counts towards nothing.
+    await push({ level: "3", programs: [] });
+    expect((await read()).programs).toEqual([]);
+  });
+
+  it("leaves them alone when the registrar does not mention them", async () => {
+    // A registrar that has not been upgraded sends neither key. Treating that
+    // as "clear them" would blank every course on every ordinary push.
+    await push({ level: "4", programs: ["MACS"] });
+    await push({ status: "published" });
+    const row = await read();
+    expect(row.level).toBe("4");
+    expect(row.programs).toEqual(["MACS"]);
+    expect(row.status).toBe("published");
+  });
+
+  it("clears the level only when told to", async () => {
+    await push({ level: null });
+    expect((await read()).level).toBeNull();
+  });
+
+  it("gives a course made by hand here no level and no programmes", async () => {
+    const made = await fx.admin.post("/courses", { code: "HAND101", name: "Made by hand" });
+    expect(made.body.course.level).toBeNull();
+    expect(made.body.course.programs).toEqual([]);
+  });
+});

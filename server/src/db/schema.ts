@@ -223,6 +223,21 @@ export const courses = pgTable(
     lateFloorPercent: score("late_floor_percent").notNull().default(50),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     externalId: externalId(),
+    /**
+     * The registrar's academic level, 1-4, and the programmes this course
+     * counts towards. Both are mirrored, never decided here: they come with
+     * the course offering and go stale only if the registrar stops sending
+     * them. Null and empty mean "the registrar has not said", which is the
+     * honest state of a course made by hand in this system -- not level zero
+     * and not "counts towards nothing".
+     *
+     * Text, not an integer or a foreign key. A level is a label the registrar
+     * owns the meaning of, and a programme here is its code (MDIV, GDCS); the
+     * LMS has no programme entity to point at and does not need one to show
+     * a chip.
+     */
+    level: text("level"),
+    programs: text("programs").array().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

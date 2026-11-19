@@ -90,6 +90,10 @@ export async function describeCourses(ctx: AppContext, rows: (typeof courses.$in
     termName: c.termId ? (termMap.get(c.termId)?.name ?? null) : null,
     departmentId: c.departmentId,
     departmentName: c.departmentId ? (deptMap.get(c.departmentId)?.name ?? null) : null,
+    // The registrar's, read-only here. A course made by hand in this system
+    // has neither, and shows neither.
+    level: c.level,
+    programs: c.programs,
     imageUrl: c.imageFileId ? `/api/v1/files/${c.imageFileId}/download` : null,
     teachers: staff.filter((s) => s.courseId === c.id).map((s) => s.name),
     studentCount: countMap.get(c.id) ?? 0,

@@ -62,6 +62,15 @@ const courseBody = z.object({
   name: trimmed(1, 200),
   term: trimmed(1, 120).optional(),
   status: z.enum(["unpublished", "published", "archived"]).optional(),
+  /**
+   * The registrar's academic level and the programmes the course counts
+   * towards. Optional, and absent is not the same as empty: a registrar that
+   * has not been upgraded yet sends neither, and must not thereby wipe what a
+   * previous sync set. `undefined` leaves the column alone; `null` and `[]`
+   * clear it deliberately.
+   */
+  level: trimmed(1, 8).nullable().optional(),
+  programs: z.array(trimmed(1, 64)).max(32).optional(),
   // As above: archiving a deleted offering must not conjure the course.
   onlyIfPresent: z.boolean().optional(),
 });
@@ -118,6 +127,21 @@ const describeCourse = (c: typeof courses.$inferSelect) => ({
   name: c.name,
   status: c.status,
   externalId: c.externalId,
+  level: c.level,
+  programs: c.programs,
+});
+
+/**
+ * What a sync should write for the registrar's own fields.
+ *
+ * Only the keys the caller actually sent. Spreading `{ level: body.level }`
+ * unconditionally would write `undefined`, and a registrar that has not been
+ * upgraded yet sends no level at all -- which would silently blank the level a
+ * previous sync set, on every push, for every course.
+ */
+const registrarFields = (body: z.infer<typeof courseBody>) => ({
+  ...(body.level !== undefined ? { level: body.level } : {}),
+  ...(body.programs !== undefined ? { programs: body.programs } : {}),
 });
 
 const describeEnrollment = (e: typeof enrollments.$inferSelect) => ({
@@ -214,7 +238,13 @@ export default async function syncRoutes(app: FastifyInstance) {
     if (existing) {
       const [updated] = await ctx.db
         .update(courses)
-        .set({ code: body.code, name: body.name, termId, ...(body.status ? { status: body.status } : {}) })
+        .set({
+          code: body.code,
+          name: body.name,
+          termId,
+          ...(body.status ? { status: body.status } : {}),
+          ...registrarFields(body),
+        })
         .where(eq(courses.id, existing.id))
         .returning();
       await trace(ctx, caller, "sync.course.updated", "course", updated!.id, { externalId: body.externalId });
@@ -234,7 +264,15 @@ export default async function syncRoutes(app: FastifyInstance) {
     });
     const [linked] = await ctx.db
       .update(courses)
-      .set({ externalId: body.externalId, ...(body.status ? { status: body.status } : {}) })
+      // Set here rather than through `createCourseRecord`, which the web app
+      // shares: a course made by hand in this system has no registrar fields
+      // to pass, and widening that helper's body for this would put two
+      // registrar-owned columns in front of every person who creates a course.
+      .set({
+        externalId: body.externalId,
+        ...(body.status ? { status: body.status } : {}),
+        ...registrarFields(body),
+      })
       .where(eq(courses.id, course.id))
       .returning();
     await trace(ctx, caller, "sync.course.created", "course", course.id, { externalId: body.externalId });
