@@ -591,3 +591,66 @@ describe("the registrar's level and programmes ride with the course", () => {
     expect(made.body.course.programs).toEqual([]);
   });
 });
+
+describe("filtering the course list by level and programme", () => {
+  const made: string[] = [];
+
+  const push = (externalId: string, over: Record<string, unknown>) =>
+    sync("POST", "/sync/courses", course({ externalId, ...over }));
+
+  beforeAll(async () => {
+    // A small catalogue: two Level 1 courses in different programmes, one of
+    // which counts towards both, and a Level 2.
+    await push("EDU-FLT-1", { code: "FLT101", name: "Old Testament", level: "1", programs: ["MDIV"] });
+    await push("EDU-FLT-2", { code: "FLT102", name: "New Testament", level: "1", programs: ["MDIV", "GDCS"] });
+    await push("EDU-FLT-3", { code: "FLT201", name: "Hermeneutics", level: "2", programs: ["GDCS"] });
+    made.push("EDU-FLT-1", "EDU-FLT-2", "EDU-FLT-3");
+    for (const externalId of made) {
+      const [row] = await env.database.db.select().from(courses).where(eq(courses.externalId, externalId));
+      await fx.admin.post(`/courses/${row!.id}/status`, { status: "published" });
+    }
+  });
+
+  const codes = async (query: string) => {
+    const r = await fx.admin.get(`/courses?scope=all&perPage=100${query}`);
+    expect(r.status).toBe(200);
+    return r.body.data.map((c: { code: string }) => c.code).filter((c: string) => c.startsWith("FLT")).sort();
+  };
+
+  it("narrows by level", async () => {
+    expect(await codes("&level=1")).toEqual(["FLT101", "FLT102"]);
+    expect(await codes("&level=2")).toEqual(["FLT201"]);
+  });
+
+  it("narrows by programme, matching a course that counts towards several", async () => {
+    // FLT102 is in both; asking for GDCS must find it without naming MDIV too.
+    expect(await codes("&program=GDCS")).toEqual(["FLT102", "FLT201"]);
+    expect(await codes("&program=MDIV")).toEqual(["FLT101", "FLT102"]);
+  });
+
+  it("combines the two", async () => {
+    expect(await codes("&level=1&program=GDCS")).toEqual(["FLT102"]);
+    expect(await codes("&level=2&program=MDIV")).toEqual([]);
+  });
+
+  it("matches a programme exactly, never as a fragment", async () => {
+    // "MDIV" must not be found by asking for "MD", or a filter would quietly
+    // return courses belonging to a different programme.
+    expect(await codes("&program=MD")).toEqual([]);
+  });
+
+  it("offers only the levels and programmes that exist", async () => {
+    const r = await fx.admin.get("/courses/facets");
+    expect(r.status).toBe(200);
+    expect(r.body.levels).toEqual(expect.arrayContaining(["1", "2"]));
+    expect(r.body.programs).toEqual(expect.arrayContaining(["GDCS", "MDIV"]));
+    // Sorted and without repeats, so the dropdown is stable between loads.
+    expect(r.body.programs).toEqual([...new Set(r.body.programs)].sort());
+  });
+
+  it("does not collide with the course-by-id route", async () => {
+    // "facets" is a static segment and must win over /courses/:id.
+    const r = await fx.admin.get("/courses/facets");
+    expect(r.body).toHaveProperty("levels");
+  });
+});

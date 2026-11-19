@@ -146,6 +146,30 @@ export async function createCourseRecord(
 export default async function courseRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
 
+  /**
+   * The levels and programmes that actually occur, for the list's filters.
+   *
+   * Derived rather than listed: this system has no level or programme entity
+   * of its own, only what the registrar has sent with a course. Offering a
+   * fixed 1-4 would promise filters that match nothing, and offering the
+   * values on the current page would change as you paged.
+   *
+   * Org-wide, like `/terms` and `/departments` beside it: that a Level 3
+   * exists is a fact about the catalogue, not about anybody's enrolment.
+   * Fastify prefers a static segment over a parametric one, so this never
+   * collides with `/courses/:id`.
+   */
+  app.get("/courses/facets", async (req) => {
+    const user = requireUser(req);
+    const rows = await ctx.db
+      .select({ level: courses.level, programs: courses.programs })
+      .from(courses)
+      .where(eq(courses.orgId, user.orgId));
+    const levels = [...new Set(rows.map((r) => r.level).filter((l): l is string => !!l))].sort();
+    const programs = [...new Set(rows.flatMap((r) => r.programs))].sort();
+    return { levels, programs };
+  });
+
   app.get("/courses", async (req) => {
     const user = requireUser(req);
     const q = parse(
@@ -154,6 +178,9 @@ export default async function courseRoutes(app: FastifyInstance) {
         status: z.enum(["unpublished", "published", "archived"]).optional(),
         termId: z.uuid().optional(),
         departmentId: z.uuid().optional(),
+        // The registrar's two, mirrored onto the course by the offering sync.
+        level: trimmed(1, 8).optional(),
+        program: trimmed(1, 64).optional(),
         scope: z.enum(["mine", "all"]).default("mine"),
       }),
       req.query,
@@ -163,6 +190,10 @@ export default async function courseRoutes(app: FastifyInstance) {
     if (q.status) filters.push(eq(courses.status, q.status));
     if (q.termId) filters.push(eq(courses.termId, q.termId));
     if (q.departmentId) filters.push(eq(courses.departmentId, q.departmentId));
+    if (q.level) filters.push(eq(courses.level, q.level));
+    // Containment, not equality: a course counts towards several programmes and
+    // asking for one of them must not require naming all of them.
+    if (q.program) filters.push(sql`${courses.programs} @> ARRAY[${q.program}]::text[]`);
 
     const roles = new Map<string, string>();
     if (q.scope === "mine" || user.role !== "admin") {

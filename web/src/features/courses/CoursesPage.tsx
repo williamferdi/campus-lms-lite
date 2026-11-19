@@ -148,12 +148,15 @@ export function CoursesPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [termId, setTermId] = useState("");
+  const [level, setLevel] = useState("");
+  const [program, setProgram] = useState("");
   const [scope, setScope] = useState<"mine" | "all">(user.role === "admin" ? "all" : "mine");
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [view, setView] = usePref<"cards" | "list">("coursesView", "list");
   const terms = useApi<{ data: Term[] }>("/terms");
-  const q = useApi<Paged<Course>>(`/courses${qs({ q: search, status, termId, scope, page, perPage: 12 })}`, { placeholderData: (prev) => prev });
+  const facets = useApi<{ levels: string[]; programs: string[] }>("/courses/facets");
+  const q = useApi<Paged<Course>>(`/courses${qs({ q: search, status, termId, level, program, scope, page, perPage: 12 })}`, { placeholderData: (prev) => prev });
   const canCreate = user.role !== "student";
 
   return (
@@ -187,6 +190,28 @@ export function CoursesPage() {
             </option>
           ))}
         </Select>
+        {/* Only offered when the registrar has actually sent some. A system
+            with no synced courses should not show two dead filters. */}
+        {!!facets.data?.levels.length && (
+          <Select aria-label="Filter by level" value={level} onChange={(e) => (setLevel(e.target.value), setPage(1))}>
+            <option value="">All levels</option>
+            {facets.data.levels.map((l) => (
+              <option key={l} value={l}>
+                Level {l}
+              </option>
+            ))}
+          </Select>
+        )}
+        {!!facets.data?.programs.length && (
+          <Select aria-label="Filter by programme" value={program} onChange={(e) => (setProgram(e.target.value), setPage(1))}>
+            <option value="">All programmes</option>
+            {facets.data.programs.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </Select>
+        )}
         {user.role === "admin" && (
           <Select aria-label="Scope" value={scope} onChange={(e) => (setScope(e.target.value as "mine" | "all"), setPage(1))}>
             <option value="all">All courses</option>
@@ -205,7 +230,7 @@ export function CoursesPage() {
         {(data) =>
           data.data.length === 0 ? (
             <Card>
-              <EmptyState icon={<BookOpen className="size-6" />} title="No courses found" description={search || status || termId ? "Try clearing the filters." : canCreate ? "Create your first course to get started." : "You're not enrolled in any courses yet."} />
+              <EmptyState icon={<BookOpen className="size-6" />} title="No courses found" description={search || status || termId || level || program ? "Try clearing the filters." : canCreate ? "Create your first course to get started." : "You're not enrolled in any courses yet."} />
             </Card>
           ) : (
             <>
