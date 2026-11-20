@@ -23,6 +23,7 @@ import { TopicEditor, TopicsList, TopicView } from "./features/discussions/Discu
 import { GradesRoute, StudentGradesRoute } from "./features/grades/GradesPages";
 import { InboxPage } from "./features/inbox/InboxPage";
 import { AttemptView, QuizPage, QuizTake, QuizzesList } from "./features/quizzes/QuizzesPages";
+import { RubricsPage } from "./features/rubrics/RubricsPage";
 import { useAuth } from "./lib/auth";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -94,6 +95,7 @@ export function App() {
             <Route path="grades/:userId" element={<StudentGradesRoute />} />
             <Route path="people" element={<PeoplePage />} />
             <Route path="syllabus" element={<SyllabusPage />} />
+            <Route path="rubrics" element={<RubricsPage />} />
             <Route path="stats" element={<StatsPage />} />
             <Route path="settings" element={<CourseSettings />} />
             <Route path="*" element={<NotFound />} />

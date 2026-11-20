@@ -9,8 +9,10 @@ import { Badge, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, FormErro
 import { api, ApiError } from "../../lib/api";
 import { formatDateTime, formatPoints, fromLocalInput, toLocalInput } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
-import type { AssignmentGroup, Attempt, AttemptQuestion, Quiz, QuizQuestion, QuizResponse } from "../../lib/types";
+import type { AssignmentGroup, Attempt, AttemptQuestion, Quiz, QuizQuestion, QuizResponse, SubmissionDetail } from "../../lib/types";
 import { ModuleNav } from "../content/ModuleNav";
+import { LinkedRubricAttach, MyAssignmentRubric, useAssignmentRubric } from "../rubrics/AssignmentRubric";
+import { RubricAssessor, draftPayload, type AssessmentDraft } from "../rubrics/RubricAssessor";
 
 const TYPE_LABEL = { multiple_choice: "Multiple choice", multiple_select: "Multiple answers", true_false: "True / false", short_answer: "Short answer" } as const;
 
@@ -154,6 +156,7 @@ function QuizOverview({ quizId }: { quizId: string }) {
                 </Table>
               </Card>
             )}
+            {d.quiz.assignmentId && <MyAssignmentRubric assignmentId={d.quiz.assignmentId} feedbackOnly />}
             <ModuleNav refId={quizId} />
           </article>
         );
@@ -195,7 +198,12 @@ function QuizManager({ quizId }: { quizId: string }) {
             ))}
           </div>
           {tab === "questions" && <QuestionsEditor quiz={quiz} />}
-          {tab === "settings" && <QuizSettings quiz={quiz} />}
+          {tab === "settings" && (
+            <div className="space-y-5">
+              <QuizSettings quiz={quiz} />
+              {quiz.assignmentId && <LinkedRubricAttach assignmentId={quiz.assignmentId} kind="quiz" />}
+            </div>
+          )}
           {tab === "attempts" && <AttemptsList quiz={quiz} />}
         </>
       )}
@@ -698,6 +706,13 @@ export function AttemptView() {
   const [comments, setComments] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const grader = permissions.canGrade && q.data?.student.id !== undefined && q.data.attempt.results !== undefined;
+  // Quiz rubrics are feedback only; one assessment per student, on the quiz's assignment.
+  const assignmentId = grader ? q.data?.quiz.assignmentId : null;
+  const rubric = useAssignmentRubric(assignmentId).data?.rubric ?? null;
+  const subUrl = assignmentId && q.data ? `/assignments/${assignmentId}/submissions/${q.data.student.id}` : null;
+  const sub = useApi<SubmissionDetail>(rubric ? subUrl : null);
+  const [draft, setDraft] = useState<AssessmentDraft>({});
+  const [draftDirty, setDraftDirty] = useState(false);
 
   useEffect(() => {
     const r = q.data?.attempt.results;
@@ -706,6 +721,11 @@ export function AttemptView() {
     setComments(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v.comment ?? ""])));
   }, [q.data?.attempt.results]);
 
+  useEffect(() => {
+    setDraft(sub.data?.rubricAssessment?.scores ?? {});
+    setDraftDirty(false);
+  }, [sub.data?.rubricAssessment]);
+
   const saveGrades = async () => {
     setBusy(true);
     try {
@@ -713,6 +733,10 @@ export function AttemptView() {
         scores: Object.fromEntries(Object.entries(scores).map(([k, v]) => [k, v === "" ? null : Number(v)])),
         comments,
       });
+      if (rubric && subUrl && draftDirty) {
+        await api.put(`${subUrl}/rubric-assessment`, draftPayload(draft));
+        await invalidate(subUrl);
+      }
       await invalidate(url, `/quizzes/${quizId}`, `/courses/${course.id}`, "/dashboard");
       fb.success("Attempt grades saved and synced to the gradebook.");
     } catch (err) {
@@ -770,6 +794,22 @@ export function AttemptView() {
               </Card>
             );
           })}
+          {grader && rubric && (
+            <Card>
+              <CardHeader title={`Rubric: ${rubric.title}`} description="Feedback only — doesn't change the quiz score. One rubric assessment per student, saved with “Save grades”." />
+              <div className="px-5 py-4">
+                <RubricAssessor
+                  rubric={rubric}
+                  value={draft}
+                  onChange={(next) => {
+                    setDraft(next);
+                    setDraftDirty(true);
+                  }}
+                  disabled={permissions.readOnly}
+                />
+              </div>
+            </Card>
+          )}
           {grader && (
             <div className="flex justify-end">
               <Button onClick={() => void saveGrades()} loading={busy}>Save grades</Button>

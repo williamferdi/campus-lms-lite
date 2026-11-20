@@ -194,6 +194,23 @@ export async function seed(app: FastifyInstance, db: Db, password: string, log: 
   const q5 = (await lee.post<Q>(`/quizzes/${quiz.id}/questions`, { type: "short_answer", prompt: "In one or two sentences, explain why cells are small.", points: 4 })).question;
   await lee.patch(`/quizzes/${quiz.id}`, { published: true });
 
+  // Rubric library: graded with on the essay, feedback only on the quiz.
+  type R = { rubric: { id: string; criteria: { id: string; ratings: { id: string; points: number }[] }[] } };
+  const essayRubric = (await lee.post<R>(`/courses/${bio101}/rubrics`, {
+    title: "Written assignment rubric",
+    criteria: [
+      { description: "Content and accuracy", longDescription: "Describes each organelle correctly and explains how they work together.", ratings: [{ description: "Excellent", points: 10 }, { description: "Good", points: 7 }, { description: "Needs work", points: 4 }] },
+      { description: "Organization", ratings: [{ description: "Clear and logical", points: 6 }, { description: "Mostly clear", points: 4 }, { description: "Hard to follow", points: 2 }] },
+      { description: "Writing mechanics", ratings: [{ description: "Polished", points: 4 }, { description: "Minor errors", points: 3 }, { description: "Many errors", points: 1 }] },
+    ],
+  })).rubric;
+  await lee.patch(`/assignments/${essay}`, { rubricId: essayRubric.id, rubricUseForGrading: true });
+  await lee.patch(`/assignments/${quiz.assignmentId}`, { rubricId: essayRubric.id });
+  const rating = (criterion: number, points: number) => {
+    const c = essayRubric.criteria[criterion]!;
+    return { ratingId: c.ratings.find((r) => r.points === points)!.id };
+  };
+
   const discussion = (await lee.post<{ topic: { id: string } }>(`/courses/${bio101}/discussions`, {
     title: "Week 1: Where do you see biology every day?",
     body: "Share one example from your daily life and reply to at least one classmate.",
@@ -265,6 +282,9 @@ export async function seed(app: FastifyInstance, db: Db, password: string, log: 
 
   // Grading (TA and teacher)
   const ta = await as("ta");
+  const [content, organization, mechanics] = essayRubric.criteria.map((c) => c.id) as [string, string, string];
+  await ta.put(`/assignments/${essay}/submissions/${ids.s1.id}/rubric-assessment`, { scores: { [content]: rating(0, 10), [organization]: rating(1, 4), [mechanics]: { ...rating(2, 4), comments: "A labelled diagram would make this even clearer." } } });
+  await lee.put(`/assignments/${essay}/submissions/${ids.s2.id}/rubric-assessment`, { scores: { [content]: { ...rating(0, 7), comments: "Expand on the Golgi apparatus." }, [organization]: rating(1, 4), [mechanics]: rating(2, 4) } });
   await ta.put(`/assignments/${essay}/submissions/${ids.s1.id}/grade`, { grade: "18", comment: "Clear structure and accurate detail. Add one diagram next time." });
   await lee.put(`/assignments/${essay}/submissions/${ids.s2.id}/grade`, { grade: "15", comment: "Good analogy; expand on the Golgi's role." });
   await lee.post(`/assignments/${essay}/post-grades`);

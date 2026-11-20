@@ -11,6 +11,7 @@ import { courseMemberIds, notify } from "../services/notify.js";
 import { contentEditor, courseAccess, requireStaff, requireUser } from "../services/policy.js";
 import { assertContentUnlocked, recordContentView } from "../services/progress.js";
 import type { AppContext } from "../types.js";
+import { rubricForCourse } from "./rubrics.js";
 
 const STUDENT_SUBMISSION_TYPES = ["online_text_entry", "online_url", "online_upload", "on_paper", "none"] as const;
 
@@ -34,6 +35,8 @@ const assignmentFields = z
     postManually: z.boolean(),
     omitFromFinal: z.boolean(),
     groupId: z.uuid().nullable(),
+    rubricId: z.uuid().nullable(),
+    rubricUseForGrading: z.boolean(),
   })
   .partial();
 const assignmentCreate = assignmentFields.required({ title: true });
@@ -68,7 +71,26 @@ export function describeAssignment(a: typeof assignments.$inferSelect) {
     published: a.published,
     postManually: a.postManually,
     omitFromFinal: a.omitFromFinal,
+    rubricId: a.rubricId,
+    rubricUseForGrading: a.rubricUseForGrading,
   };
+}
+
+/**
+ * Resolve rubric settings for an assignment. The rubric must belong to the course; quizzes keep their
+ * question-based score, so their rubric is feedback only; without a rubric there is nothing to grade with.
+ */
+async function rubricSettings(
+  ctx: AppContext,
+  courseId: string,
+  submissionTypes: readonly string[],
+  next: { rubricId?: string | null | undefined; rubricUseForGrading?: boolean | undefined },
+  current: { rubricId: string | null; rubricUseForGrading: boolean } = { rubricId: null, rubricUseForGrading: false },
+) {
+  const rubricId = next.rubricId === undefined ? current.rubricId : next.rubricId;
+  if (next.rubricId) await rubricForCourse(ctx, courseId, next.rubricId);
+  const wanted = next.rubricUseForGrading ?? current.rubricUseForGrading;
+  return { rubricId, rubricUseForGrading: !!rubricId && wanted && !submissionTypes.includes("online_quiz") };
 }
 
 async function groupFor(ctx: AppContext, courseId: string, groupId: string | null | undefined) {
@@ -210,6 +232,7 @@ export default async function assignmentRoutes(app: FastifyInstance) {
     checkDates(body);
     checkSubmissionTypes(body.submissionTypes);
     const groupId = await groupFor(ctx, id, body.groupId);
+    const rubric = await rubricSettings(ctx, id, body.submissionTypes, body);
     const [assignment] = await ctx.db
       .insert(assignments)
       .values({
@@ -229,6 +252,7 @@ export default async function assignmentRoutes(app: FastifyInstance) {
         published: body.published,
         postManually: body.postManually,
         omitFromFinal: body.omitFromFinal,
+        ...rubric,
       })
       .returning();
     if (assignment!.published && access.course.status === "published") {
@@ -283,11 +307,16 @@ export default async function assignmentRoutes(app: FastifyInstance) {
       const [{ n } = { n: 0 }] = await ctx.db.select({ n: count() }).from(submissions).where(and(eq(submissions.assignmentId, assignment.id), ne(submissions.status, "unsubmitted")));
       if (n > 0) throw conflict("This assignment cannot be unpublished because students have already submitted work.");
     }
-    const { description, groupId, ...rest } = sent;
+    const { description, groupId, rubricId, rubricUseForGrading, ...rest } = sent;
+    const rubric =
+      rubricId !== undefined || rubricUseForGrading !== undefined
+        ? await rubricSettings(ctx, assignment.courseId, assignment.submissionTypes, { rubricId, rubricUseForGrading }, assignment)
+        : {};
     const [updated] = await ctx.db
       .update(assignments)
       .set({
         ...rest,
+        ...rubric,
         ...(description !== undefined ? { descriptionMd: description, descriptionHtml: renderMarkdown(description) } : {}),
         ...(groupId !== undefined ? { groupId: await groupFor(ctx, assignment.courseId, groupId) } : {}),
         ...(rest.gradingType === "not_graded" ? { pointsPossible: 0 } : {}),

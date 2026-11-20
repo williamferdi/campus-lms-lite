@@ -92,6 +92,10 @@ Implemented in `server/src/domain/grading.ts`; tests in `server/test/unit/gradin
 10. Rounding: stored scores keep 2 decimals; percentages are computed at full precision and
     rounded half-up to 2 decimals only for display/letter lookup.
 11. Letter grade from the course scheme (default A ≥ 93, A- ≥ 90, B+ ≥ 87, … F < 60).
+12. Rubrics never write grades themselves. With "Use this rubric for grading", the grading page
+    fills the grade field with the rubric total and the grader's Save sends it through the normal
+    grade path (late policy, release, audit). Gradebook edits and CSV imports can therefore differ
+    from the rubric total; the grading page points this out. Quiz rubrics are feedback only.
 
 ## 6. Security summary
 

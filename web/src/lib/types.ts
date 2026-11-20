@@ -208,6 +208,8 @@ export interface Assignment {
   published: boolean;
   postManually: boolean;
   omitFromFinal: boolean;
+  rubricId: string | null;
+  rubricUseForGrading: boolean;
   quizId?: string | null;
   discussionId?: string | null;
   needsGradingCount?: number;
@@ -238,8 +240,54 @@ export interface SubmissionDetail {
   submission: Cell & { extraAttempts: number; gradedAttempt: number | null; gradedAt: string | null };
   attempts: { attempt: number; submissionType: string; bodyHtml: string | null; url: string | null; late: boolean; submittedAt: string; files: Attachment[] }[];
   comments: SubmissionComment[];
+  rubricAssessment: RubricAssessment | null;
   canSubmit: boolean;
   submitBlockReason: string | null;
+}
+
+export interface RubricRating {
+  id: string;
+  description: string;
+  longDescription: string;
+  points: number;
+}
+
+export interface RubricCriterion {
+  id: string;
+  description: string;
+  longDescription: string;
+  /** Equals the highest rating's points. */
+  points: number;
+  /** Highest first. */
+  ratings: RubricRating[];
+}
+
+export interface Rubric {
+  id: string;
+  courseId: string;
+  title: string;
+  criteria: RubricCriterion[];
+  freeFormComments: boolean;
+  possible: number;
+  updatedAt: string;
+}
+
+export interface RubricListItem extends Rubric {
+  usedBy: { id: string; title: string }[];
+  assessmentCount: number;
+}
+
+export interface RubricScore {
+  ratingId: string | null;
+  points: number | null;
+  comments: string;
+}
+
+export interface RubricAssessment {
+  rubricId: string;
+  scores: Record<string, RubricScore>;
+  total: number;
+  updatedAt: string;
 }
 
 export interface ScoreSummary {

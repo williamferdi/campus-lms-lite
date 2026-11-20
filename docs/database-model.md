@@ -18,8 +18,10 @@ organizations ─┬─ users ─┬─ auth_sessions
                            ├─ pages
                            ├─ modules ─┬─ module_prerequisites (module → earlier module)
                            │           └─ module_items ── item_completions (user × item)
+                           ├─ rubrics ◄── assignments.rubric_id
                            ├─ assignment_groups ── assignments ─┬─ submissions ─┬─ submission_attempts
-                           │                                    │                └─ submission_comments
+                           │                                    │                ├─ submission_comments
+                           │                                    │                └─ rubric_assessments
                            ├─ quizzes ─┬─ quiz_questions        │
                            │           └─ quiz_attempts         │ (quiz.assignment_id → assignments)
                            ├─ discussion_topics ── discussion_entries (self-referencing parent_id)
@@ -46,10 +48,12 @@ audit_events (actor, action, entity, course, metadata jsonb)
 | module_items | Items in modules | `type`, `ref_id` (page/assignment/quiz/discussion/file id), `url` (links), `requirement` (none/must_view/must_mark_done/must_submit/min_score/must_contribute), `min_score`, `published`, `indent` |
 | item_completions | Student view and mark-done facts | PK (module_item_id, user_id); `viewed_at`, `marked_done_at`. Submit, score and contribute requirements are derived from submissions, attempts and posts. |
 | assignment_groups | Grading categories | `weight`, `drop_lowest`, `drop_highest` |
-| assignments | Gradable work | `points_possible`, `grading_type`, `submission_types text[]`, `allowed_extensions text[]`, `allowed_attempts` (null = unlimited), `unlock_at/due_at/lock_at`, `published`, `post_manually`, `omit_from_final` |
+| assignments | Gradable work | `points_possible`, `grading_type`, `submission_types text[]`, `allowed_extensions text[]`, `allowed_attempts` (null = unlimited), `unlock_at/due_at/lock_at`, `published`, `post_manually`, `omit_from_final`, `rubric_id` (SET NULL), `rubric_use_for_grading` (false for quizzes) |
+| rubrics | Course rubric library | `title`, `criteria jsonb` ([{id, description, long_description, points, ratings: [{id, description, points}]}], ratings highest first), `free_form_comments` |
 | submissions | One row per student per assignment | unique (assignment_id, user_id); `status` unsubmitted/submitted/pending_review/graded/returned; `attempt`, `extra_attempts`; `entered_score`, `points_deducted`, `score`, `grade`; `excused`; `late_policy_status` override; `posted_at` (grade release); `graded_attempt` |
 | submission_attempts | Immutable history | unique (submission_id, attempt); body, URL or file ids; `late` |
 | submission_comments | Feedback thread | `from_grader` (hidden from the student until released) |
+| rubric_assessments | A grader's rubric scores for one submission | unique (submission_id); `rubric_id` (RESTRICT: a rubric that scored work can't be deleted), `scores jsonb` ({criterionId: {ratingId, points, comments}}), `total`; hidden from the student until the grade is posted |
 | quizzes | Quiz settings | `assignment_id` (graded quizzes; SET NULL), time limit, attempts, scoring policy, result-visibility settings, availability dates |
 | quiz_questions | Questions | `type`, `prompt_md/html`, `points`, `choices jsonb`, `answer_key jsonb` (never sent to students unless release rules allow) |
 | quiz_attempts | Attempts | unique (quiz_id, user_id, attempt_number); `answers jsonb`; `results jsonb` ({auto, manual, comment} per question); `expires_at` (server-enforced deadline); `status` in_progress/pending_review/graded |

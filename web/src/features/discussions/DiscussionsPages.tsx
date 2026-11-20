@@ -11,6 +11,7 @@ import { formatDateTime, fromLocalInput, plural, relative, toLocalInput } from "
 import { useApi, useInvalidate } from "../../lib/query";
 import type { AssignmentGroup, Entry, Topic } from "../../lib/types";
 import { ModuleNav } from "../content/ModuleNav";
+import { AssignmentRubric, LinkedRubricAttach, MyAssignmentRubric } from "../rubrics/AssignmentRubric";
 
 type Kind = "discussion" | "announcement";
 const path = (kind: Kind) => (kind === "announcement" ? "announcements" : "discussions");
@@ -232,6 +233,12 @@ export function TopicView({ kind }: { kind: Kind }) {
             {d.topic.assignmentId && <Link to={`${base}/assignments/${d.topic.assignmentId}`}><Badge tone="violet">Graded discussion</Badge></Link>}
           </div>
           <Card className="p-6">{d.topic.bodyHtml ? <RichContent html={d.topic.bodyHtml} /> : <p className="text-sm text-slate-500">No message.</p>}</Card>
+          {d.topic.assignmentId &&
+            (permissions.isStaff ? (
+              permissions.canEditContent && !permissions.readOnly ? <LinkedRubricAttach assignmentId={d.topic.assignmentId} kind="discussion" /> : <AssignmentRubric assignmentId={d.topic.assignmentId} />
+            ) : (
+              <MyAssignmentRubric assignmentId={d.topic.assignmentId} />
+            ))}
           {d.canReply && <ReplyForm topicId={d.topic.id} parentId={null} onDone={refresh} label={kind === "announcement" ? "Reply" : "Post your response"} />}
           {d.mustPostFirst && <p className="rounded-lg bg-sky-50 px-4 py-3 text-sm text-sky-900">Post your own response first to see what classmates wrote.</p>}
           <section aria-label="Replies" className="space-y-3">

@@ -13,6 +13,8 @@ import { useApi, useInvalidate } from "../../lib/query";
 import { usePref } from "../../lib/ui-prefs";
 import type { Assignment, AssignmentGroup, SubmissionDetail } from "../../lib/types";
 import { ModuleNav } from "../content/ModuleNav";
+import { AssignmentRubric } from "../rubrics/AssignmentRubric";
+import { RubricAttachCard } from "../rubrics/RubricAttachCard";
 import { SUBMISSION_TYPE_LABEL, SubmissionBadges } from "./shared";
 
 // ====================================================================== list
@@ -333,6 +335,11 @@ export function AssignmentView() {
               <RichContent html={a.descriptionHtml} />
             </Card>
           )}
+          {permissions.isStaff && permissions.canEditContent && !permissions.readOnly ? (
+            <RubricAttachCard assignment={a} kind={a.quizId ? "quiz" : a.discussionId ? "discussion" : "assignment"} />
+          ) : permissions.isStaff || (permissions.role === "student" && a.quizId) ? (
+            <AssignmentRubric assignmentId={a.id} feedbackOnly={!!a.quizId} />
+          ) : null}
           {permissions.isStaff && permissions.canGrade && (
             <Card className="flex flex-wrap items-center gap-3 p-5 text-sm">
               <span className="mr-auto">
@@ -522,6 +529,9 @@ function StudentSubmission({ assignment: a }: { assignment: Assignment }) {
               )}
             </div>
           </Card>
+          <div className="lg:col-span-5">
+            <AssignmentRubric assignmentId={a.id} assessment={d.rubricAssessment} />
+          </div>
         </div>
       )}
     </Loadable>
@@ -635,52 +645,60 @@ export function AssignmentEditor() {
 
   if (assignmentId && existing.isPending) return <Loadable query={existing}>{() => null}</Loadable>;
   const fe = error instanceof ApiError ? error.fieldErrors() : {};
+  const saved = existing.data?.assignment;
   return (
-    <form onSubmit={submit} className="space-y-5">
-      <PageHeader title={assignmentId ? "Edit assignment" : "New assignment"} />
-      <Card className="space-y-5 p-6">
-        <FormError error={error} />
-        <TextField label="Title" required value={f.title} onChange={(e) => set({ title: e.target.value })} error={fe.title} />
-        <MarkdownEditor label="Instructions" value={f.description} onChange={(v) => set({ description: v })} />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TextField label="Points" type="number" min={0} step="0.5" value={f.pointsPossible} onChange={(e) => set({ pointsPossible: e.target.value })} disabled={f.gradingType === "not_graded"} error={fe.pointsPossible} />
-          <SelectField label="Display grade as" value={f.gradingType} onChange={(e) => set({ gradingType: e.target.value })}>
-            <option value="points">Points</option>
-            <option value="percent">Percentage</option>
-            <option value="letter_grade">Letter grade</option>
-            <option value="pass_fail">Complete / incomplete</option>
-            <option value="not_graded">Not graded</option>
-          </SelectField>
-          <SelectField label="Assignment group" value={f.groupId} onChange={(e) => set({ groupId: e.target.value })}>
-            <option value="">Default group</option>
-            {groups.data?.data.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Submission type</legend>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {typeOptions.map((t) => (
-              <Checkbox key={t} label={SUBMISSION_TYPE_LABEL[t]} checked={f.submissionTypes.includes(t)} onChange={() => toggleType(t)} />
-            ))}
+    <div className="space-y-5">
+      <form id="assignment-editor" onSubmit={submit} className="space-y-5">
+        <PageHeader title={assignmentId ? "Edit assignment" : "New assignment"} />
+        <Card className="space-y-5 p-6">
+          <FormError error={error} />
+          <TextField label="Title" required value={f.title} onChange={(e) => set({ title: e.target.value })} error={fe.title} />
+          <MarkdownEditor label="Instructions" value={f.description} onChange={(v) => set({ description: v })} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TextField label="Points" type="number" min={0} step="0.5" value={f.pointsPossible} onChange={(e) => set({ pointsPossible: e.target.value })} disabled={f.gradingType === "not_graded"} error={fe.pointsPossible} />
+            <SelectField label="Display grade as" value={f.gradingType} onChange={(e) => set({ gradingType: e.target.value })}>
+              <option value="points">Points</option>
+              <option value="percent">Percentage</option>
+              <option value="letter_grade">Letter grade</option>
+              <option value="pass_fail">Complete / incomplete</option>
+              <option value="not_graded">Not graded</option>
+            </SelectField>
+            <SelectField label="Assignment group" value={f.groupId} onChange={(e) => set({ groupId: e.target.value })}>
+              <option value="">Default group</option>
+              {groups.data?.data.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </SelectField>
           </div>
-        </fieldset>
-        {f.submissionTypes.includes("online_upload") && <TextField label="Allowed file extensions" placeholder="pdf, docx" value={f.allowedExtensions} onChange={(e) => set({ allowedExtensions: e.target.value })} hint="Leave empty to accept any platform-supported file type." error={fe.allowedExtensions} />}
-        <TextField label="Allowed attempts" type="number" min={1} max={100} placeholder="Unlimited" value={f.allowedAttempts} onChange={(e) => set({ allowedAttempts: e.target.value })} />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TextField label="Available from" type="datetime-local" value={f.unlockAt} onChange={(e) => set({ unlockAt: e.target.value })} />
-          <TextField label="Due" type="datetime-local" value={f.dueAt} onChange={(e) => set({ dueAt: e.target.value })} />
-          <TextField label="Available until" type="datetime-local" value={f.lockAt} onChange={(e) => set({ lockAt: e.target.value })} hint="No submissions after this." />
-        </div>
-        <div className="flex flex-wrap gap-x-8 gap-y-3">
-          <Checkbox label="Published" checked={f.published} onChange={(e) => set({ published: e.target.checked })} />
-          <Checkbox label="Release grades manually" hint="Grades stay hidden until you release them." checked={f.postManually} onChange={(e) => set({ postManually: e.target.checked })} />
-          <Checkbox label="Don't count toward final grade" checked={f.omitFromFinal} onChange={(e) => set({ omitFromFinal: e.target.checked })} />
-        </div>
-      </Card>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Submission type</legend>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {typeOptions.map((t) => (
+                <Checkbox key={t} label={SUBMISSION_TYPE_LABEL[t]} checked={f.submissionTypes.includes(t)} onChange={() => toggleType(t)} />
+              ))}
+            </div>
+          </fieldset>
+          {f.submissionTypes.includes("online_upload") && <TextField label="Allowed file extensions" placeholder="pdf, docx" value={f.allowedExtensions} onChange={(e) => set({ allowedExtensions: e.target.value })} hint="Leave empty to accept any platform-supported file type." error={fe.allowedExtensions} />}
+          <TextField label="Allowed attempts" type="number" min={1} max={100} placeholder="Unlimited" value={f.allowedAttempts} onChange={(e) => set({ allowedAttempts: e.target.value })} />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TextField label="Available from" type="datetime-local" value={f.unlockAt} onChange={(e) => set({ unlockAt: e.target.value })} />
+            <TextField label="Due" type="datetime-local" value={f.dueAt} onChange={(e) => set({ dueAt: e.target.value })} />
+            <TextField label="Available until" type="datetime-local" value={f.lockAt} onChange={(e) => set({ lockAt: e.target.value })} hint="No submissions after this." />
+          </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            <Checkbox label="Published" checked={f.published} onChange={(e) => set({ published: e.target.checked })} />
+            <Checkbox label="Release grades manually" hint="Grades stay hidden until you release them." checked={f.postManually} onChange={(e) => set({ postManually: e.target.checked })} />
+            <Checkbox label="Don't count toward final grade" checked={f.omitFromFinal} onChange={(e) => set({ omitFromFinal: e.target.checked })} />
+          </div>
+        </Card>
+      </form>
+      {saved ? (
+        <RubricAttachCard assignment={saved} onPointsChange={(p) => set({ pointsPossible: String(p) })} />
+      ) : (
+        <p className="text-sm text-slate-600">You can attach a rubric after you save the assignment.</p>
+      )}
       <div className="flex flex-wrap justify-between gap-2">
         {assignmentId ? (
           <Button variant="ghost" className="text-red-700" icon={<Trash2 className="size-4" />} onClick={() => void remove()}>
@@ -693,11 +711,11 @@ export function AssignmentEditor() {
           <Button variant="secondary" onClick={() => navigate(-1)}>
             Cancel
           </Button>
-          <Button type="submit" loading={busy}>
+          <Button type="submit" form="assignment-editor" loading={busy}>
             Save assignment
           </Button>
         </div>
       </div>
-    </form>
+    </div>
   );
 }

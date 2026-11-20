@@ -13,6 +13,7 @@ import {
   pages,
   quizQuestions,
   quizzes,
+  rubrics,
   sections,
 } from "../db/schema.js";
 import type { AppContext } from "../types.js";
@@ -93,12 +94,21 @@ export async function duplicateCourse(
     }
     if (srcGroups.length === 0) await tx.insert(assignmentGroups).values({ courseId, name: "Assignments" });
 
+    // rubric library (criteria ids are kept: they only need to be unique within a rubric)
+    const rubricMap = new Map<string, string>();
+    for (const r of await tx.select().from(rubrics).where(eq(rubrics.courseId, source.id))) {
+      const { id: _old, createdAt: _c, updatedAt: _u, ...rest } = r;
+      const [nr] = await tx.insert(rubrics).values({ ...rest, courseId, createdById: opts.createdById }).returning();
+      rubricMap.set(r.id, nr!.id);
+    }
+
     const assignmentMap = new Map<string, string>();
     for (const a of await tx.select().from(assignments).where(eq(assignments.courseId, source.id))) {
       const { id: _old, createdAt: _c, updatedAt: _u, ...rest } = a;
+      const rubricId = a.rubricId ? (rubricMap.get(a.rubricId) ?? null) : null;
       const [na] = await tx
         .insert(assignments)
-        .values({ ...rest, courseId, groupId: a.groupId ? (groupMap.get(a.groupId) ?? null) : null })
+        .values({ ...rest, courseId, groupId: a.groupId ? (groupMap.get(a.groupId) ?? null) : null, rubricId, rubricUseForGrading: !!rubricId && a.rubricUseForGrading })
         .returning();
       assignmentMap.set(a.id, na!.id);
     }

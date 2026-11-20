@@ -20,6 +20,7 @@ import { courseAccess, requireUser, requireWritable, type CourseAccess } from ".
 import { assertContentUnlocked } from "../services/progress.js";
 import type { AppContext, SessionUser } from "../types.js";
 import { describeFile, receiveUploads } from "./files.js";
+import { assessmentFor } from "./rubrics.js";
 
 const userParams = z.object({ id: z.uuid(), userId: z.uuid() });
 
@@ -58,6 +59,8 @@ async function submissionDetail(ctx: AppContext, access: CourseAccess, a: Assign
   const released = !!sub && (!!sub.postedAt || sub.status === "returned" || !a.postManually);
   const comments = sub ? (await loadComments(ctx, sub.id)).filter((c) => !asStudent || !c.fromGrader || released) : [];
   const [student] = await ctx.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, studentId));
+  // Rubric scores follow the grade: students see them only once the grade is posted.
+  const rubricAssessment = sub && (!asStudent || sub.postedAt) ? await assessmentFor(ctx, a, sub.id) : null;
   return {
     student,
     submission: {
@@ -76,6 +79,7 @@ async function submissionDetail(ctx: AppContext, access: CourseAccess, a: Assign
       files: x.fileIds.map((fid) => fileRows.find((f) => f.id === fid)).filter((f) => !!f).map((f) => describeFile(f!)),
     })),
     comments,
+    rubricAssessment,
     canSubmit: viewer.id === studentId && access.role === "student" && !access.readOnly ? submitBlockReason(a, sub ?? null, now) === null : false,
     submitBlockReason: viewer.id === studentId ? submitBlockReason(a, sub ?? null, now) : null,
   };

@@ -1,5 +1,6 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { courseTab, login, openCourse, users } from "./helpers";
+import { courseTab, login, logout, openCourse, users } from "./helpers";
 
 test.describe("instructor workflows", () => {
   test.beforeEach(async ({ page }) => {
@@ -75,5 +76,55 @@ test.describe("instructor workflows", () => {
     await input.fill("10");
     await input.press("Enter");
     await expect(row.getByRole("button", { name: /Field Notebook Check: 10/ })).toBeVisible();
+  });
+
+  test("builds a rubric, grades with it, and the student sees the scored rubric", async ({ page }) => {
+    const axe = async (label: string) => {
+      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+      const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+      expect(serious.map((v) => `${label}: ${v.id} — ${v.help} (${v.nodes.length}) at ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+    };
+    // Build a two-criterion rubric in the course library.
+    await courseTab(page, "Rubrics");
+    await page.getByRole("button", { name: "Rubric", exact: true }).click();
+    const builder = page.getByRole("dialog", { name: "New rubric" });
+    await builder.getByLabel("Rubric title").fill("Lab report rubric");
+    await builder.getByRole("textbox", { name: "Description", exact: true }).fill("Method");
+    await builder.getByRole("button", { name: "Add criterion" }).click();
+    await builder.getByRole("textbox", { name: "Description", exact: true }).nth(1).fill("Conclusion");
+    await axe("rubric builder");
+    await builder.getByRole("button", { name: "Save rubric" }).click();
+    await expect(page.getByRole("heading", { name: "Lab report rubric" })).toBeVisible();
+    await expect(page.getByText("2 criteria · 10 pts")).toBeVisible();
+
+    // Attach it to an assignment and use it for grading.
+    await courseTab(page, "Assignments");
+    await page.getByRole("link", { name: "Osmosis Lab Report" }).click();
+    await page.getByLabel("Rubric", { exact: true }).selectOption({ label: "Lab report rubric (10 pts)" });
+    await expect(page.getByText("Rubric attached.")).toBeVisible();
+    await page.getByLabel("Use this rubric for grading").check();
+    await expect(page.getByText("The rubric total will fill the grade.")).toBeVisible();
+
+    // Score a student: the rubric total fills the grade.
+    await page.getByRole("link", { name: "Grade submissions" }).click();
+    await page.getByRole("button", { name: /Rivera, Alex/ }).click();
+    await page.getByRole("group", { name: "Method" }).getByText("Full marks").click();
+    await expect(page.getByRole("group", { name: "Method" }).getByRole("radio", { name: /Full marks/ })).toBeChecked();
+    await page.getByRole("group", { name: "Conclusion" }).getByText("No marks").click();
+    await page.getByRole("group", { name: "Conclusion" }).getByLabel("Comment (optional)").fill("State what the results show.");
+    await expect(page.getByLabel(/Grade \(out of 30\)/)).toHaveValue("5");
+    await axe("rubric assessor");
+    await page.getByRole("button", { name: "Save grade" }).click();
+    await expect(page.getByText("Grade saved.")).toBeVisible();
+
+    // The student sees the scored rubric once the grade is released (this assignment releases automatically).
+    await logout(page);
+    await login(page, users.alex);
+    await openCourse(page, "Introduction to Biology");
+    await courseTab(page, "Assignments");
+    await page.getByRole("link", { name: "Osmosis Lab Report" }).click();
+    await expect(page.getByRole("heading", { name: "Rubric: Lab report rubric (scored)" })).toBeVisible();
+    await expect(page.getByText("Total: 5 / 10 pts")).toBeVisible();
+    await expect(page.getByText("State what the results show.")).toBeVisible();
   });
 });

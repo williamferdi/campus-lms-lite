@@ -38,6 +38,7 @@ export function courseLinks(course: Course, permissions: CoursePermissions): Cou
     { to: `${base}/pages`, label: "Pages", show: true },
     { to: `${base}/files`, label: "Files", show: true },
     { to: `${base}/syllabus`, label: "Syllabus", show: true },
+    { to: `${base}/rubrics`, label: "Rubrics", show: permissions.isStaff },
     { to: `${base}/stats`, label: "Progress", show: permissions.isStaff },
     { to: `${base}/settings`, label: "Settings", show: permissions.canManage },
   ];

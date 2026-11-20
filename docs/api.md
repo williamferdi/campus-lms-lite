@@ -96,6 +96,7 @@ Role legend used below: **A** admin · **T** teacher · **TA** · **S** student 
 | GET | /assignments/:id/submissions?status= | T/TA/A | All students plus a summary. |
 | GET | /assignments/:id/submissions/:userId | grader or self | Attempts, files, comments (the student sees grader comments once released). |
 | PUT | /assignments/:id/submissions/:userId/grade | T/TA/A | `{grade?: "8.5"|"85%"|"B+"|"complete"|null, excused?, latePolicyStatus?: late|missing|none|null, comment?}`. |
+| PUT | /assignments/:id/submissions/:userId/rubric-assessment | T/TA/A | `{scores: {[criterionId]: {ratingId?, points?, comments?}}}`. Stores rubric scores only (points capped at each criterion's maximum); the grade is saved separately with the grade route. The submission detail returns `rubricAssessment` (students: only after release). |
 | POST | /assignments/:id/submissions/:userId/return | T/TA/A | `{comment}`. Return for revision (grants an attempt if needed). |
 | POST | /assignments/:id/submissions/:userId/comments | grader or self | |
 | GET | /courses/:id/gradebook | T/TA/A | Grid with cells and totals: `totals` (all grades) and `postedTotals`. |
@@ -103,6 +104,20 @@ Role legend used below: **A** admin · **T** teacher · **TA** · **S** student 
 | GET | /courses/:id/gradebook/export | T/TA/A | CSV, formula-injection safe. |
 | POST | /courses/:id/gradebook/import | T/TA/A | `{csv, dryRun=true}`. Rows match by email, columns by `[assignment-id]`. |
 | GET | /courses/:id/needs-grading | enrolled | Count of submissions awaiting grading (0 for students). |
+
+## Rubrics
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | /courses/:id/rubrics | staff | Library with `usedBy` assignments and `assessmentCount`. |
+| POST | /courses/:id/rubrics | T/TA/A | `{title, criteria: [{description, longDescription?, ratings: [{description, points}]}], freeFormComments?}`. Ratings are sorted highest first; a criterion is worth its highest rating. |
+| GET | /rubrics/:id | staff | |
+| PATCH | /rubrics/:id | T/TA/A | 409 if `criteria` change after the rubric has scored work (title can still change). |
+| POST | /rubrics/:id/duplicate | T/TA/A | Copy with new criterion ids, titled "… (copy)". |
+| DELETE | /rubrics/:id | T/TA/A | 409 while attached to an assignment or used to score work. |
+| GET | /assignments/:id/rubric | enrolled | `{rubric, useForGrading}`; students only for published assignments. |
+
+Attach with `PATCH /assignments/:id {rubricId, rubricUseForGrading}`. The rubric must belong to the course; `rubricUseForGrading` is always false for quizzes and when no rubric is attached.
 
 ## Quizzes
 

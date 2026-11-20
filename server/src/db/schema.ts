@@ -369,6 +369,30 @@ export const assignmentGroups = pgTable(
   (t) => [index("assignment_groups_course_idx").on(t.courseId)],
 );
 
+// ---------------------------------------------------------------- rubrics
+export type RubricRating = { id: string; description: string; longDescription: string; points: number };
+// Ratings are stored highest first; a criterion's points equal its highest rating.
+export type RubricCriterion = { id: string; description: string; longDescription: string; points: number; ratings: RubricRating[] };
+export type RubricScore = { ratingId: string | null; points: number | null; comments: string };
+
+/** Course rubric library. Any assignment (including a quiz's or graded discussion's) can use one. */
+export const rubrics = pgTable(
+  "rubrics",
+  {
+    id: id(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    criteria: jsonb("criteria").$type<RubricCriterion[]>().notNull().default([]),
+    freeFormComments: boolean("free_form_comments").notNull().default(false),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("rubrics_course_idx").on(t.courseId)],
+);
+
 export const assignments = pgTable(
   "assignments",
   {
@@ -393,6 +417,9 @@ export const assignments = pgTable(
     postManually: boolean("post_manually").notNull().default(false),
     omitFromFinal: boolean("omit_from_final").notNull().default(false),
     position: integer("position").notNull().default(0),
+    rubricId: uuid("rubric_id").references((): AnyPgColumn => rubrics.id, { onDelete: "set null" }),
+    // When true the grader's rubric total fills the grade (still editable). Always false for quizzes.
+    rubricUseForGrading: boolean("rubric_use_for_grading").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -473,6 +500,29 @@ export const submissionComments = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("submission_comments_sub_idx").on(t.submissionId)],
+);
+
+/** A grader's rubric scores for one student's submission. Hidden from the student until grades are posted. */
+export const rubricAssessments = pgTable(
+  "rubric_assessments",
+  {
+    id: id(),
+    rubricId: uuid("rubric_id")
+      .notNull()
+      .references(() => rubrics.id, { onDelete: "restrict" }),
+    assignmentId: uuid("assignment_id")
+      .notNull()
+      .references(() => assignments.id, { onDelete: "cascade" }),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    assessorId: uuid("assessor_id").references(() => users.id, { onDelete: "set null" }),
+    scores: jsonb("scores").$type<Record<string, RubricScore>>().notNull().default({}),
+    total: score("total").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("rubric_assessments_submission_idx").on(t.submissionId), index("rubric_assessments_rubric_idx").on(t.rubricId)],
 );
 
 // ---------------------------------------------------------------- quizzes

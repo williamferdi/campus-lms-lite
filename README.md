@@ -7,7 +7,7 @@ It is an independent implementation with its own code, interface and branding (s
 
 **What works today:** user and course administration, enrollments (individual and CSV), modules
 with prerequisites and completion tracking, pages, files, assignments with text/URL/file
-submissions, grading with feedback, return for revision and late policies, a weighted gradebook
+submissions, grading with feedback and rubrics, return for revision and late policies, a weighted gradebook
 with release control and CSV import/export, timed quizzes with auto- and manual grading,
 discussions, announcements, a calendar, in-app notifications, and role-based dashboards.
 Details: [docs/requirements.md](docs/requirements.md).
@@ -115,14 +115,14 @@ To change the schema, edit `server/src/db/schema.ts`, then run
   access-control checks from the browser, axe-core accessibility scans (WCAG 2 A/AA,
   serious/critical) of key screens, and a phone-viewport run.
 
-### Verification (latest run, 2026-10-28, Windows 11, Node 24.18)
+### Verification (latest run, 2026-11-20, Windows 11, Node 24.18)
 
 | Check | Result |
 |---|---|
 | `npm run lint` | pass (0 problems) |
 | `npm run typecheck` | pass (server + web, strict) |
-| `npm test` | **137 / 137** passed (8 files) |
-| `npm run test:e2e` | **12 / 12** passed (11 desktop + 1 mobile) |
+| `npm test` | **157 / 157** passed (10 files) |
+| `npm run test:e2e` | **15 / 15** passed (14 desktop + 1 mobile) |
 | `npm run build` | pass. Note: the single JS bundle is 540 kB (150 kB gzip); route-level code splitting is a future optimization. |
 | Production bundle smoke test | pass (migrations, SPA, CSP headers, error envelope) |
 | Docker image / PostgreSQL server | **not run** (no Docker or Postgres on the build machine) |

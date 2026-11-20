@@ -8,7 +8,9 @@ import { Badge, Button, Card, CardHeader, Checkbox, Dialog, EmptyState, FormErro
 import { api } from "../../lib/api";
 import { formatBytes, formatDateTime, formatPoints, plural, relative } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
-import type { Assignment, Cell, SubmissionDetail } from "../../lib/types";
+import type { Assignment, Cell, Entry, SubmissionDetail } from "../../lib/types";
+import { useAssignmentRubric } from "../rubrics/AssignmentRubric";
+import { RubricAssessor, draftPayload, draftTotal, type AssessmentDraft } from "../rubrics/RubricAssessor";
 import { SUBMISSION_TYPE_LABEL, SubmissionBadges } from "./shared";
 
 type Row = Cell & { student: { id: string; name: string; sortableName: string } };
@@ -121,7 +123,7 @@ export function GradingPage() {
                 <Button variant="ghost" size="sm" icon={<ChevronLeft className="size-4" />} disabled={idx <= 0} onClick={() => go(idx - 1)}>
                   Previous
                 </Button>
-                <span className="text-sm text-slate-500">{idx >= 0 ? `${idx + 1} of ${rows.length}` : ""}</span>
+                <span className="text-sm text-slate-600">{idx >= 0 ? `${idx + 1} of ${rows.length}` : ""}</span>
                 <Button variant="ghost" size="sm" disabled={idx < 0 || idx >= rows.length - 1} onClick={() => go(idx + 1)}>
                   Next <ChevronRight className="size-4" />
                 </Button>
@@ -152,6 +154,11 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [returning, setReturning] = useState(false);
+  const rubricQ = useAssignmentRubric(a.id);
+  const rubric = rubricQ.data?.rubric ?? null;
+  const useForGrading = !!rubricQ.data?.useForGrading;
+  const [draft, setDraft] = useState<AssessmentDraft>({});
+  const [draftDirty, setDraftDirty] = useState(false);
 
   useEffect(() => {
     const s = q.data?.submission;
@@ -161,6 +168,18 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
     setLateStatus(s.latePolicyStatus ?? "");
   }, [q.data?.submission]);
 
+  useEffect(() => {
+    setDraft(q.data?.rubricAssessment?.scores ?? {});
+    setDraftDirty(false);
+  }, [q.data?.rubricAssessment]);
+
+  const onDraft = (next: AssessmentDraft) => {
+    setDraft(next);
+    setDraftDirty(true);
+    // With "use for grading", the rubric total fills the grade; the grader can still change it.
+    if (rubric && useForGrading) setGrade(String(draftTotal(rubric, next)));
+  };
+
   const refresh = () => invalidate(`/assignments/${a.id}`, `/courses/${course.id}`, "/dashboard");
 
   const save = async (e: FormEvent) => {
@@ -168,6 +187,7 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
     setBusy(true);
     setError(null);
     try {
+      if (rubric && draftDirty) await api.put(`${url}/rubric-assessment`, draftPayload(draft));
       await api.put(`${url}/grade`, { grade: excused ? undefined : grade.trim() === "" ? null : grade, excused, latePolicyStatus: lateStatus || null, comment: comment || undefined });
       setComment("");
       await refresh();
@@ -182,11 +202,16 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
   return (
     <Loadable query={q}>
       {(d) => (
-        <div className="grid gap-6 xl:grid-cols-5">
-          <Card className="xl:col-span-3">
+        // With a rubric the grade panel needs room for rating cards, so it sits below the work until very wide screens.
+        <div className={clsx("grid gap-6", rubric ? "2xl:grid-cols-5" : "xl:grid-cols-5")}>
+          <Card className={rubric ? "2xl:col-span-3" : "xl:col-span-3"}>
             <CardHeader title={d.student.name} description={d.submission.submittedAt ? `Last submitted ${formatDateTime(d.submission.submittedAt)}` : "No submission yet"} actions={<SubmissionBadges cell={d.submission} pointsPossible={a.pointsPossible} />} />
             <div className="space-y-3 px-5 py-4">
-              {d.attempts.length === 0 && <p className="text-sm text-slate-500">{a.submissionTypes.includes("on_paper") ? "Submitted on paper — enter the grade on the right." : "The student has not submitted anything yet."}</p>}
+              {a.discussionId ? (
+                <DiscussionPosts discussionId={a.discussionId} studentId={studentId} />
+              ) : (
+                d.attempts.length === 0 && <p className="text-sm text-slate-500">{a.submissionTypes.includes("on_paper") ? "Submitted on paper — enter the grade on the right." : "The student has not submitted anything yet."}</p>
+              )}
               {[...d.attempts].reverse().map((at) => (
                 <section key={at.attempt} className="rounded-lg border border-slate-200 p-4" aria-label={`Attempt ${at.attempt}`}>
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -209,11 +234,25 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
               ))}
             </div>
           </Card>
-          <div className="space-y-6 xl:col-span-2">
+          <div className={clsx("space-y-6", rubric ? "2xl:col-span-2" : "xl:col-span-2")}>
             <Card>
               <CardHeader title="Grade" />
               <form onSubmit={save} className="space-y-4 px-5 py-4">
                 <FormError error={error} />
+                {rubric && (
+                  <section aria-label="Rubric" className="space-y-2">
+                    <h3 className="text-sm font-semibold">
+                      Rubric: {rubric.title}
+                      <span className="ml-2 font-normal text-slate-600">{useForGrading ? "(fills the grade)" : "(feedback only)"}</span>
+                    </h3>
+                    <RubricAssessor rubric={rubric} value={draft} onChange={onDraft} disabled={permissions.readOnly} />
+                    {useForGrading && d.rubricAssessment && d.submission.enteredScore !== null && d.submission.enteredScore !== d.rubricAssessment.total && !draftDirty && (
+                      <p className="text-xs text-amber-800">
+                        The saved grade ({formatPoints(d.submission.enteredScore)}) differs from the rubric total ({formatPoints(d.rubricAssessment.total)}).
+                      </p>
+                    )}
+                  </section>
+                )}
                 <TextField label={`Grade (out of ${formatPoints(a.pointsPossible)})`} value={grade} onChange={(e) => setGrade(e.target.value)} disabled={excused || permissions.readOnly} hint={GRADE_HINT[a.gradingType]} />
                 {d.submission.pointsDeducted ? (
                   <p className="text-xs text-amber-800">
@@ -256,6 +295,32 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
           {returning && <ReturnDialog url={url} onClose={() => setReturning(false)} onDone={refresh} />}
         </div>
       )}
+    </Loadable>
+  );
+}
+
+/** A graded discussion's submission is the student's posts, so show them to the grader. */
+function DiscussionPosts({ discussionId, studentId }: { discussionId: string; studentId: string }) {
+  const q = useApi<{ entries: Entry[] }>(`/discussions/${discussionId}`);
+  return (
+    <Loadable query={q}>
+      {(d) => {
+        const mine = d.entries.filter((e) => e.authorId === studentId && !e.deleted);
+        if (mine.length === 0) return <p className="text-sm text-slate-500">The student hasn't posted in this discussion yet.</p>;
+        return (
+          <ol className="space-y-3" aria-label="Student's posts">
+            {mine.map((e) => (
+              <li key={e.id} className="rounded-lg border border-slate-200 p-4">
+                <div className="mb-2 text-xs text-slate-500">
+                  {e.parentId ? "Reply" : "Post"} · {formatDateTime(e.createdAt)}
+                  {e.editedAt && " · edited"}
+                </div>
+                {e.bodyHtml && <RichContent html={e.bodyHtml} className="text-sm" />}
+              </li>
+            ))}
+          </ol>
+        );
+      }}
     </Loadable>
   );
 }

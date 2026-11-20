@@ -59,7 +59,8 @@ REA-observed evidence exists for this build.
 | Submissions by student and status; grading with feedback | ✅ | Grader view with filters, prev/next student |
 | Return for revision | ✅ | Grants an extra attempt when needed |
 | Submission history and confirmation | ✅ | Every attempt kept |
-| Rubrics, annotations, peer review, group assignments | ⏳ | |
+| Rubrics | ✅ | Course rubric library; attach to assignments, quizzes and graded discussions. "Use this rubric for grading" fills the grade from the rubric total (still editable). Criteria lock once used to score work (edit a copy). Students see criteria before submitting and their scores after release. |
+| Annotations, peer review, group assignments | ⏳ | |
 | Plagiarism detection | ❌ | |
 
 ## E. Quizzes
@@ -73,7 +74,8 @@ REA-observed evidence exists for this build.
 | Result release settings (hide responses, correct answers from date, manual score release) | ✅ | |
 | Answer key protection | ✅ | Keys never sent to students unless release rules allow |
 | Regrade after key change | ✅ | |
-| Question banks, randomized question pools, essay rubrics, partial credit | ⏳ | |
+| Quiz rubrics | ✅ | Feedback only: scored on the attempt review page; the quiz score always comes from the questions |
+| Question banks, randomized question pools, partial credit | ⏳ | |
 | Proctoring / lockdown browser, access codes | ❌ | |
 
 ## F. Gradebook
