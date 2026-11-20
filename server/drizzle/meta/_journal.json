@@ -22,6 +22,13 @@
       "when": 1795068314926,
       "tag": "0002_mute_invisible_woman",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795204031806,
+      "tag": "0003_ordinary_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

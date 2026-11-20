@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   assignmentGroups,
+  assignmentRubrics,
   assignments,
   courses,
   discussionTopics,
@@ -13,6 +14,8 @@ import {
   pages,
   quizQuestions,
   quizzes,
+  rubricCriteria,
+  rubrics,
   sections,
 } from "../db/schema.js";
 import type { AppContext } from "../types.js";
@@ -119,6 +122,41 @@ export async function duplicateCourse(
       for (const qq of questions) {
         const { id: _old, createdAt: _c, ...rest } = qq;
         await tx.insert(quizQuestions).values({ ...rest, quizId: quizMap.get(qq.quizId)! });
+      }
+    }
+
+    // rubrics + criteria + attachments
+    // The course's own rubrics are cloned; a shared one stays the single shared original. No
+    // assessments are copied, for the same reason no submissions or grades are.
+    const rubricMap = new Map<string, string>();
+    const srcRubrics = await tx.select().from(rubrics).where(eq(rubrics.courseId, source.id));
+    for (const r of srcRubrics) {
+      const { id: _old, createdAt: _c, updatedAt: _u, ...rest } = r;
+      const [nr] = await tx.insert(rubrics).values({ ...rest, courseId }).returning();
+      rubricMap.set(r.id, nr!.id);
+    }
+    if (srcRubrics.length) {
+      const criteria = await tx
+        .select()
+        .from(rubricCriteria)
+        .where(inArray(rubricCriteria.rubricId, srcRubrics.map((r) => r.id)));
+      for (const rc of criteria) {
+        const { id: _old, createdAt: _c, updatedAt: _u, ...rest } = rc;
+        await tx.insert(rubricCriteria).values({ ...rest, rubricId: rubricMap.get(rc.rubricId)! });
+      }
+    }
+    if (assignmentMap.size) {
+      const attachments = await tx
+        .select()
+        .from(assignmentRubrics)
+        .where(inArray(assignmentRubrics.assignmentId, [...assignmentMap.keys()]));
+      for (const at of attachments) {
+        const { id: _old, createdAt: _c, updatedAt: _u, ...rest } = at;
+        await tx.insert(assignmentRubrics).values({
+          ...rest,
+          assignmentId: assignmentMap.get(at.assignmentId)!,
+          rubricId: rubricMap.get(at.rubricId) ?? at.rubricId,
+        });
       }
     }
 

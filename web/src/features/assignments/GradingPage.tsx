@@ -9,6 +9,7 @@ import { api } from "../../lib/api";
 import { formatBytes, formatDateTime, formatPoints, plural, relative } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
 import type { Assignment, Cell, SubmissionDetail } from "../../lib/types";
+import { RubricAssessmentPanel } from "../rubrics/RubricAssessmentPanel";
 import { SUBMISSION_TYPE_LABEL, SubmissionBadges } from "./shared";
 
 type Row = Cell & { student: { id: string; name: string; sortableName: string } };
@@ -210,6 +211,21 @@ function StudentGrader({ assignment: a, studentId }: { assignment: Assignment; s
             </div>
           </Card>
           <div className="space-y-6 xl:col-span-2">
+            {a.rubric && (
+              <RubricAssessmentPanel
+                assignmentId={a.id}
+                studentId={studentId}
+                pointsPossible={a.pointsPossible}
+                rubric={a.rubric}
+                assessment={d.rubricAssessment}
+                attempt={d.submission.attempt}
+                readOnly={permissions.readOnly}
+                onSaved={async () => {
+                  await q.refetch();
+                  await refresh();
+                }}
+              />
+            )}
             <Card>
               <CardHeader title="Grade" />
               <form onSubmit={save} className="space-y-4 px-5 py-4">

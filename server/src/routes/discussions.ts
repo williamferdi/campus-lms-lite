@@ -10,6 +10,7 @@ import { getOrCreateSubmission } from "../services/grading.js";
 import { courseMemberIds, notify } from "../services/notify.js";
 import { contentEditor, courseAccess, requireUser, requireWritable } from "../services/policy.js";
 import { assertContentUnlocked, recordContentView } from "../services/progress.js";
+import { rubricForAssignment } from "../services/rubrics.js";
 import type { AppContext } from "../types.js";
 
 type Topic = typeof discussionTopics.$inferSelect;
@@ -206,7 +207,11 @@ export default async function discussionRoutes(app: FastifyInstance) {
     const hasPosted = entries.some((e) => e.entry.authorId === user.id && !e.entry.deletedAt);
     const mustPostFirst = !access.isStaff && topic.requireInitialPost && !hasPosted;
     const [author] = topic.authorId ? await ctx.db.select({ name: users.name }).from(users).where(eq(users.id, topic.authorId)) : [];
+    const rubric = topic.assignmentId
+      ? await rubricForAssignment(ctx, topic.assignmentId, { asStudent: !access.isStaff })
+      : null;
     return {
+      rubric,
       topic: {
         ...topic,
         bodyMd: access.isStaff ? topic.bodyMd : undefined,

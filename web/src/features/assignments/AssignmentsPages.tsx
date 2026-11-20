@@ -13,6 +13,8 @@ import { useApi, useInvalidate } from "../../lib/query";
 import { usePref } from "../../lib/ui-prefs";
 import type { Assignment, AssignmentGroup, SubmissionDetail } from "../../lib/types";
 import { ModuleNav } from "../content/ModuleNav";
+import { RubricAttachment } from "../rubrics/RubricAttachment";
+import { MarkedRubric, RubricPanel } from "../rubrics/RubricTable";
 import { SUBMISSION_TYPE_LABEL, SubmissionBadges } from "./shared";
 
 // ====================================================================== list
@@ -333,6 +335,22 @@ export function AssignmentView() {
               <RichContent html={a.descriptionHtml} />
             </Card>
           )}
+          {permissions.isStaff ? (
+            <RubricAttachment
+              assignmentId={a.id}
+              courseId={course.id}
+              base={base}
+              rubric={a.rubric}
+              canEdit={permissions.canEditContent}
+              onChanged={() => q.refetch()}
+            />
+          ) : (
+            a.rubric && (
+              <Card className="p-6">
+                <RubricPanel rubric={a.rubric} />
+              </Card>
+            )
+          )}
           {permissions.isStaff && permissions.canGrade && (
             <Card className="flex flex-wrap items-center gap-3 p-5 text-sm">
               <span className="mr-auto">
@@ -424,6 +442,8 @@ function StudentSubmission({ assignment: a }: { assignment: Assignment }) {
                   {d.submission.gradedAt && <div className="text-xs">Graded {relative(d.submission.gradedAt)}</div>}
                 </div>
               )}
+              {/* Released on the same terms as a grader's comments: once the grade is posted. */}
+              {d.rubricAssessment && <MarkedRubric assessment={d.rubricAssessment} />}
               {d.canSubmit && onlineTypes.length > 0 ? (
                 <form onSubmit={submit} className="space-y-4">
                   <FormError error={error} />

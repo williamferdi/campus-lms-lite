@@ -33,6 +33,8 @@ export function courseLinks(course: Course, permissions: CoursePermissions): Cou
     { to: `${base}/assignments`, label: "Assignments", show: true },
     { to: `${base}/quizzes`, label: "Quizzes", show: true },
     { to: `${base}/discussions`, label: "Discussions", show: true },
+    // Staff only: students meet a rubric on the assessment it marks, not as a list of its own.
+    { to: `${base}/rubrics`, label: "Rubrics", show: permissions.isStaff },
     { to: `${base}/grades`, label: permissions.canGrade ? "Gradebook" : "Grades", show: permissions.canGrade || permissions.role === "student" },
     { to: `${base}/people`, label: "People", show: true },
     { to: `${base}/pages`, label: "Pages", show: true },

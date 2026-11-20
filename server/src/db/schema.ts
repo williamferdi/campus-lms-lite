@@ -524,6 +524,143 @@ export const submissionComments = pgTable(
   (t) => [index("submission_comments_sub_idx").on(t.submissionId)],
 );
 
+// ---------------------------------------------------------------- rubrics
+export type RubricLevel = { id: string; description: string; points: number };
+
+/**
+ * One criterion exactly as it stood when a mark was given, never re-read from the library.
+ * Editing a rubric must not move a mark a student has already been told about, so the wording,
+ * the levels and the maximum are copied here at marking time -- which also means a mark can
+ * still be re-opened and amended after its rubric has been rewritten or deleted.
+ *
+ * `points: null` is an unmarked criterion: the assessment is saved, but it does not grade.
+ */
+export type RubricAssessmentCriterion = {
+  /** `rubric_criteria.id` at marking time. The row may no longer exist. */
+  criterionId: string;
+  position: number;
+  description: string;
+  longDescription: string;
+  pointsPossible: number;
+  levels: RubricLevel[];
+  points: number | null;
+  /** The level the grader picked, or null when they typed a number instead. */
+  levelId: string | null;
+};
+
+/**
+ * A reusable marking scheme. With a `course_id` it belongs to that course and its teachers
+ * maintain it; with none it is a shared one, usable by any teacher in the organization and
+ * changed only by an administrator -- one teacher's edit would otherwise change how every
+ * course using it is marked.
+ *
+ * This is the one table that carries both `org_id` and `course_id`. Everywhere else a
+ * course-scoped row inherits its tenant through `courses.org_id`, checked in `policy.ts`; a
+ * shared rubric has no course to inherit from, so it holds its own. When `course_id` is set it
+ * must agree with that course's `org_id`, which only `services/rubrics.ts` can enforce.
+ */
+export const rubrics = pgTable(
+  "rubrics",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    courseId: uuid("course_id").references(() => courses.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("rubrics_course_idx").on(t.courseId), index("rubrics_org_idx").on(t.orgId)],
+);
+
+export const rubricCriteria = pgTable(
+  "rubric_criteria",
+  {
+    id: id(),
+    rubricId: uuid("rubric_id")
+      .notNull()
+      .references(() => rubrics.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    description: text("description").notNull(),
+    longDescription: text("long_description").notNull().default(""),
+    points: score("points").notNull().default(0),
+    // The levels to choose between, in order. A leaf list edited and read as a whole, like
+    // `quiz_questions.choices`, so it is not worth a table of its own.
+    levels: jsonb("levels").$type<RubricLevel[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("rubric_criteria_rubric_idx").on(t.rubricId, t.position)],
+);
+
+/**
+ * Which rubric marks an assessment. One per assignment -- and because a graded quiz and a
+ * graded discussion each hang off an assignment row, that one attachment covers all three
+ * kinds of assessment.
+ *
+ * `rubric_id` is deliberately left at the default action rather than `restrict`: `restrict` is
+ * reserved here for the organization boundary, and it is checked immediately, so a course
+ * delete that cascades to both this table and `rubrics` could abort on a reference the same
+ * cascade was about to remove. Refusing to delete a rubric that is in use is a job for a guard
+ * that can name the assignments.
+ */
+export const assignmentRubrics = pgTable(
+  "assignment_rubrics",
+  {
+    id: id(),
+    assignmentId: uuid("assignment_id")
+      .notNull()
+      .references(() => assignments.id, { onDelete: "cascade" }),
+    rubricId: uuid("rubric_id")
+      .notNull()
+      .references(() => rubrics.id),
+    /** Off: the rubric is marking guidance and feedback, and the grade is typed as before. */
+    useForGrading: boolean("use_for_grading").notNull().default(true),
+    hidePoints: boolean("hide_points").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("assignment_rubrics_assignment_idx").on(t.assignmentId),
+    index("assignment_rubrics_rubric_idx").on(t.rubricId),
+  ],
+);
+
+/**
+ * One student's work judged against a rubric. `criteria` is the snapshot; `total` is its sum.
+ *
+ * The total reaches the gradebook only through `setGrade`, like every other grade, so the late
+ * policy, the posting rule, the audit trail and the registrar's export all keep working. This
+ * table never writes to `submissions` itself.
+ */
+export const rubricAssessments = pgTable(
+  "rubric_assessments",
+  {
+    id: id(),
+    submissionId: uuid("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    // Set null, not cascade: the snapshot stands on its own, so deleting the library rubric
+    // leaves the marking it produced intact.
+    rubricId: uuid("rubric_id").references(() => rubrics.id, { onDelete: "set null" }),
+    rubricTitle: text("rubric_title").notNull(),
+    assessorId: uuid("assessor_id").references(() => users.id, { onDelete: "set null" }),
+    /** Which attempt was in front of the grader, which `submissions.graded_attempt` loses. */
+    attempt: integer("attempt"),
+    total: score("total"),
+    pointsPossible: score("points_possible").notNull().default(0),
+    criteria: jsonb("criteria").$type<RubricAssessmentCriterion[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("rubric_assessments_submission_idx").on(t.submissionId),
+    index("rubric_assessments_rubric_idx").on(t.rubricId),
+  ],
+);
+
 // ---------------------------------------------------------------- quizzes
 export const quizzes = pgTable(
   "quizzes",

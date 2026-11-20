@@ -17,6 +17,7 @@ import {
 } from "../services/grading.js";
 import { courseMemberIds, notify } from "../services/notify.js";
 import { courseAccess, requireUser, requireWritable, type CourseAccess } from "../services/policy.js";
+import { assessmentFor, attachmentFor, describeAssessment } from "../services/rubrics.js";
 import { assertContentUnlocked } from "../services/progress.js";
 import type { AppContext, SessionUser } from "../types.js";
 import { describeFile, receiveUploads } from "./files.js";
@@ -58,8 +59,18 @@ async function submissionDetail(ctx: AppContext, access: CourseAccess, a: Assign
   const released = !!sub && (!!sub.postedAt || sub.status === "returned" || !a.postManually);
   const comments = sub ? (await loadComments(ctx, sub.id)).filter((c) => !asStudent || !c.fromGrader || released) : [];
   const [student] = await ctx.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, studentId));
+  // The marked rubric is released on exactly the same terms as a grader's comments -- the
+  // student sees it once the grade is posted, and not before.
+  const attachment = await attachmentFor(ctx, a.id);
+  const assessment = sub ? await assessmentFor(ctx, sub.id) : undefined;
   return {
     student,
+    rubricAssessment:
+      assessment && (!asStudent || released)
+        ? describeAssessment(assessment, asStudent ? undefined : sub, {
+            hidePoints: asStudent && !!attachment?.hidePoints,
+          })
+        : null,
     submission: {
       ...cellFor(a, sub, now, asStudent),
       extraAttempts: sub?.extraAttempts ?? 0,

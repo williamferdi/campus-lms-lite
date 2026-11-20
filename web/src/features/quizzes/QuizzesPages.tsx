@@ -11,6 +11,8 @@ import { formatDateTime, formatPoints, fromLocalInput, toLocalInput } from "../.
 import { useApi, useInvalidate } from "../../lib/query";
 import type { AssignmentGroup, Attempt, AttemptQuestion, Quiz, QuizQuestion, QuizResponse } from "../../lib/types";
 import { ModuleNav } from "../content/ModuleNav";
+import { RubricAttachment } from "../rubrics/RubricAttachment";
+import { RubricPanel } from "../rubrics/RubricTable";
 
 const TYPE_LABEL = { multiple_choice: "Multiple choice", multiple_select: "Multiple answers", true_false: "True / false", short_answer: "Short answer" } as const;
 
@@ -117,6 +119,7 @@ function QuizOverview({ quizId }: { quizId: string }) {
               {(d.quiz.unlockAt || d.quiz.lockAt) && <div className="text-xs text-slate-500 sm:col-span-4">Available {d.quiz.unlockAt ? `from ${formatDateTime(d.quiz.unlockAt)}` : "now"} {d.quiz.lockAt ? `until ${formatDateTime(d.quiz.lockAt)}` : ""}</div>}
             </Card>
             {d.quiz.descriptionHtml && <Card className="p-6"><RichContent html={d.quiz.descriptionHtml} /></Card>}
+            {d.quiz.rubric && <Card className="p-6"><RubricPanel rubric={d.quiz.rubric} /></Card>}
             <Card className="flex flex-wrap items-center gap-4 p-5">
               <div className="mr-auto text-sm">
                 {d.keptScore !== null ? (
@@ -164,7 +167,7 @@ function QuizOverview({ quizId }: { quizId: string }) {
 
 function QuizManager({ quizId }: { quizId: string }) {
   const { base } = useCourse();
-  const [tab, setTab] = useState<"questions" | "settings" | "attempts">(() => (new URLSearchParams(location.search).get("tab") as "settings" | null) ?? "questions");
+  const [tab, setTab] = useState<"questions" | "settings" | "rubric" | "attempts">(() => (new URLSearchParams(location.search).get("tab") as "settings" | null) ?? "questions");
   const q = useApi<{ quiz: Quiz }>(`/quizzes/${quizId}`);
   const fb = useFeedback();
   const invalidate = useInvalidate();
@@ -188,7 +191,7 @@ function QuizManager({ quizId }: { quizId: string }) {
             actions={<><Badge tone={quiz.published ? "green" : "amber"}>{quiz.published ? "Published" : "Draft"}</Badge><Button variant={quiz.published ? "secondary" : "primary"} onClick={() => void togglePublish(quiz)}>{quiz.published ? "Unpublish" : "Publish"}</Button></>}
           />
           <div role="tablist" aria-label="Quiz sections" className="mb-5 flex gap-1 border-b border-slate-200">
-            {(["questions", "settings", "attempts"] as const).map((t) => (
+            {(["questions", "settings", "rubric", "attempts"] as const).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={clsx("-mb-px border-b-2 px-3 py-2 text-sm font-medium capitalize", tab === t ? "border-brand-700 text-brand-800" : "border-transparent text-slate-600 hover:text-slate-900")}>
                 {t}
               </button>
@@ -196,10 +199,43 @@ function QuizManager({ quizId }: { quizId: string }) {
           </div>
           {tab === "questions" && <QuestionsEditor quiz={quiz} />}
           {tab === "settings" && <QuizSettings quiz={quiz} />}
+          {tab === "rubric" && <QuizRubric quiz={quiz} />}
           {tab === "attempts" && <AttemptsList quiz={quiz} />}
         </>
       )}
     </Loadable>
+  );
+}
+
+/**
+ * A rubric on a quiz is feedback, never the mark: the questions score it, and a regrade would
+ * overwrite anything a rubric had written. The attach dialog says so, and the server refuses.
+ */
+function QuizRubric({ quiz }: { quiz: Quiz }) {
+  const { course, base, permissions } = useCourse();
+  const invalidate = useInvalidate();
+  if (!quiz.assignmentId) {
+    return (
+      <Card className="p-5 text-sm text-slate-600">
+        A practice quiz has no gradebook entry, so there is nothing to attach a rubric to.
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="rounded-panel bg-sky-50 px-4 py-2 text-sm text-sky-900">
+        A quiz is scored by its questions. A rubric here records your judgement and shows the student how the work
+        was read — it does not change the mark.
+      </p>
+      <RubricAttachment
+        assignmentId={quiz.assignmentId}
+        courseId={course.id}
+        base={base}
+        rubric={quiz.rubric}
+        canEdit={permissions.canEditContent}
+        onChanged={() => invalidate(`/quizzes/${quiz.id}`)}
+      />
+    </div>
   );
 }
 

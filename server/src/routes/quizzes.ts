@@ -11,6 +11,7 @@ import { audit } from "../services/audit.js";
 import { courseMemberIds, notify } from "../services/notify.js";
 import { contentEditor, courseAccess, requireUser, requireWritable } from "../services/policy.js";
 import { assertContentUnlocked, recordContentView } from "../services/progress.js";
+import { rubricForAssignment } from "../services/rubrics.js";
 import {
   attemptVisibility,
   expireIfNeeded,
@@ -254,7 +255,11 @@ export default async function quizRoutes(app: FastifyInstance) {
   app.get("/quizzes/:id", async (req) => {
     const { user, quiz, access } = await loadQuiz(req);
     const qs = await questionsOf(ctx, quiz.id);
-    const base = { ...describeQuiz(quiz, access.isStaff), questionCount: qs.length, pointsPossible: qs.reduce((s, q) => s + q.points, 0) };
+    // A quiz can carry a rubric for feedback, though its questions are what score it.
+    const rubric = quiz.assignmentId
+      ? await rubricForAssignment(ctx, quiz.assignmentId, { asStudent: !access.isStaff })
+      : null;
+    const base = { ...describeQuiz(quiz, access.isStaff), questionCount: qs.length, pointsPossible: qs.reduce((s, q) => s + q.points, 0), rubric };
     if (access.isStaff) {
       const [assignment] = quiz.assignmentId ? await ctx.db.select({ postManually: assignments.postManually, groupId: assignments.groupId }).from(assignments).where(eq(assignments.id, quiz.assignmentId)) : [];
       return { quiz: { ...base, postManually: assignment?.postManually ?? false, groupId: assignment?.groupId ?? null }, attempts: [], startBlockReason: null };

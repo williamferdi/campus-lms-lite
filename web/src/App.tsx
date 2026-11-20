@@ -23,6 +23,7 @@ import { TopicEditor, TopicsList, TopicView } from "./features/discussions/Discu
 import { GradesRoute, StudentGradesRoute } from "./features/grades/GradesPages";
 import { InboxPage } from "./features/inbox/InboxPage";
 import { AttemptView, QuizPage, QuizTake, QuizzesList } from "./features/quizzes/QuizzesPages";
+import { AdminRubricEditor, AdminRubrics, CourseRubricEditor, CourseRubrics } from "./features/rubrics/RubricsPages";
 import { useAuth } from "./lib/auth";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -90,6 +91,8 @@ export function App() {
             <Route path="discussions/new" element={<TopicEditor kind="discussion" />} />
             <Route path="discussions/:topicId" element={<TopicView kind="discussion" />} />
             <Route path="discussions/:topicId/edit" element={<TopicEditor kind="discussion" />} />
+            <Route path="rubrics" element={<CourseRubrics />} />
+            <Route path="rubrics/:rubricId" element={<CourseRubricEditor />} />
             <Route path="grades" element={<GradesRoute />} />
             <Route path="grades/:userId" element={<StudentGradesRoute />} />
             <Route path="people" element={<PeoplePage />} />
@@ -114,6 +117,8 @@ export function App() {
             <Route path="users/:userId" element={<AdminUserDetail />} />
             <Route path="courses" element={<AdminCourses />} />
             <Route path="catalog" element={<AdminCatalog />} />
+            <Route path="rubrics" element={<AdminRubrics />} />
+            <Route path="rubrics/:rubricId" element={<AdminRubricEditor />} />
             <Route path="audit" element={<AdminAudit />} />
           </Route>
           <Route path="*" element={<NotFound />} />

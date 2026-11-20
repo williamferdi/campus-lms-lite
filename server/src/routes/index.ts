@@ -13,6 +13,7 @@ import moduleRoutes from "./modules.js";
 import notificationRoutes from "./notifications.js";
 import pageRoutes from "./pages.js";
 import quizRoutes from "./quizzes.js";
+import rubricRoutes from "./rubrics.js";
 import submissionRoutes from "./submissions.js";
 import syncRoutes, { syncReadRoutes } from "./sync.js";
 import userRoutes from "./users.js";
@@ -28,6 +29,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(fileRoutes);
   await app.register(assignmentRoutes);
   await app.register(submissionRoutes);
+  await app.register(rubricRoutes);
   await app.register(gradebookRoutes);
   await app.register(quizRoutes);
   await app.register(discussionRoutes);

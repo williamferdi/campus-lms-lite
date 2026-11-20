@@ -216,6 +216,7 @@ export interface Assignment {
   needsGradingCount?: number;
   submittedCount?: number;
   mySubmission?: Cell;
+  rubric?: AttachedRubric | null;
 }
 
 export interface Attachment {
@@ -236,9 +237,67 @@ export interface SubmissionComment {
   authorName: string | null;
 }
 
+/** Points are null wherever a rubric hides them — the server strips them, not the browser. */
+export interface RubricLevel {
+  id: string;
+  description: string;
+  points?: number | null;
+}
+
+export interface RubricCriterion {
+  id: string;
+  position: number;
+  description: string;
+  longDescription: string;
+  points: number | null;
+  levels: RubricLevel[];
+}
+
+export interface Rubric {
+  id: string;
+  title: string;
+  description: string;
+  courseId: string | null;
+  shared: boolean;
+  pointsPossible: number | null;
+  criteria: RubricCriterion[];
+}
+
+export interface AttachedRubric extends Rubric {
+  useForGrading: boolean;
+  hidePoints: boolean;
+}
+
+/** One criterion as a mark recorded it — a copy, not a reference to the library. */
+export interface AssessedCriterion {
+  criterionId: string;
+  position: number;
+  description: string;
+  longDescription: string;
+  pointsPossible: number | null;
+  levels: RubricLevel[];
+  points: number | null;
+  levelId: string | null;
+}
+
+export interface RubricAssessment {
+  id: string;
+  rubricId: string | null;
+  rubricTitle: string;
+  attempt: number | null;
+  total: number | null;
+  pointsPossible: number | null;
+  complete: boolean;
+  /** The mark on record was later changed by hand, so it no longer matches this total. */
+  overridden: boolean;
+  criteria: AssessedCriterion[];
+  updatedAt: string;
+}
+
 export interface SubmissionDetail {
   student: { id: string; name: string };
   submission: Cell & { extraAttempts: number; gradedAttempt: number | null; gradedAt: string | null };
+  rubricAssessment: RubricAssessment | null;
   attempts: { attempt: number; submissionType: string; bodyHtml: string | null; url: string | null; late: boolean; submittedAt: string; files: Attachment[] }[];
   comments: SubmissionComment[];
   canSubmit: boolean;
@@ -287,6 +346,8 @@ export interface Quiz {
   startBlockReason?: string | null;
   submittedAttempts?: number;
   pendingReview?: number;
+  /** A quiz is scored by its questions; a rubric on it is feedback. */
+  rubric?: AttachedRubric | null;
 }
 
 export type QuestionType = "multiple_choice" | "multiple_select" | "true_false" | "short_answer";

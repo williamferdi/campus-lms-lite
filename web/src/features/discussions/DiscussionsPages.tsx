@@ -9,7 +9,9 @@ import { Badge, Button, Card, Checkbox, EmptyState, FormError, LinkButton, Loada
 import { api, ApiError } from "../../lib/api";
 import { formatDateTime, fromLocalInput, plural, relative, toLocalInput } from "../../lib/format";
 import { useApi, useInvalidate } from "../../lib/query";
-import type { AssignmentGroup, Entry, Topic } from "../../lib/types";
+import type { AssignmentGroup, AttachedRubric, Entry, Topic } from "../../lib/types";
+import { RubricAttachment } from "../rubrics/RubricAttachment";
+import { RubricPanel } from "../rubrics/RubricTable";
 import { ModuleNav } from "../content/ModuleNav";
 
 type Kind = "discussion" | "announcement";
@@ -154,6 +156,8 @@ interface TopicResponse {
   mustPostFirst: boolean;
   canReply: boolean;
   canModerate: boolean;
+  /** Only a graded discussion can carry one — it is attached to the assignment behind it. */
+  rubric: AttachedRubric | null;
 }
 
 export function TopicView({ kind }: { kind: Kind }) {
@@ -232,6 +236,23 @@ export function TopicView({ kind }: { kind: Kind }) {
             {d.topic.assignmentId && <Link to={`${base}/assignments/${d.topic.assignmentId}`}><Badge tone="violet">Graded discussion</Badge></Link>}
           </div>
           <Card className="p-6">{d.topic.bodyHtml ? <RichContent html={d.topic.bodyHtml} /> : <p className="text-sm text-slate-500">No message.</p>}</Card>
+          {d.topic.assignmentId &&
+            (permissions.isStaff ? (
+              <RubricAttachment
+                assignmentId={d.topic.assignmentId}
+                courseId={course.id}
+                base={base}
+                rubric={d.rubric}
+                canEdit={permissions.canEditContent}
+                onChanged={refresh}
+              />
+            ) : (
+              d.rubric && (
+                <Card className="p-6">
+                  <RubricPanel rubric={d.rubric} />
+                </Card>
+              )
+            ))}
           {d.canReply && <ReplyForm topicId={d.topic.id} parentId={null} onDone={refresh} label={kind === "announcement" ? "Reply" : "Post your response"} />}
           {d.mustPostFirst && <p className="rounded-lg bg-sky-50 px-4 py-3 text-sm text-sky-900">Post your own response first to see what classmates wrote.</p>}
           <section aria-label="Replies" className="space-y-3">

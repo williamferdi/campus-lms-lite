@@ -93,6 +93,27 @@ Implemented in `server/src/domain/grading.ts`; tests in `server/test/unit/gradin
     rounded half-up to 2 decimals only for display/letter lookup.
 11. Letter grade from the course scheme (default A ≥ 93, A- ≥ 90, B+ ≥ 87, … F < 60).
 
+12. **Rubrics do not bypass any of the above.** A rubric that scores the work hands its criterion
+    total to `setGrade` as `entered_score`; rules 1–11 then apply unchanged, so the late policy
+    takes its cut, the posting rule decides what the student sees, and the two course totals are
+    computed exactly as for a mark typed into the grade box. **Nothing in the rubric code writes
+    to `submissions`** — that single rule is what keeps the audit trail, the posting gate and the
+    registrar's `/sync/grades` export (which trusts `posted_at` alone) consistent, so an
+    "optimisation" that writes `score` or `posted_at` from the rubric path should be refused in
+    review. Two consequences worth knowing: a total above `points_possible` reads as over 100%,
+    as extra credit already does; and on a `pass_fail` assignment a complete rubric short of full
+    marks is "incomplete", by rule 11's lookup rather than anything rubric-specific.
+13. **A rubric total only becomes a grade when the rubric is complete.** A half-marked rubric is
+    stored and shown but changes no grade: with automatic posting, pushing partial sums would
+    notify the student on every save. And a mark is always taken against a **snapshot** of the
+    criteria, so editing a rubric afterwards cannot move a mark already given.
+14. **A quiz is never scored by a rubric.** `syncQuizSubmission` rewrites the score from the
+    attempts on every submission and regrade, so a rubric total written there would be silently
+    overwritten — and because `setGrade` keeps `posted_at` once set, that overwrite would rewrite
+    an already released mark and notify the student again. A rubric on a quiz is therefore
+    feedback only, refused with a 422 if asked to grade, keyed on the `quizzes.assignment_id`
+    foreign key rather than on the editable `submission_types` array.
+
 ## 6. Security summary
 
 See `docs/deployment.md` §Security for operations. Highlights: server-side authorization for

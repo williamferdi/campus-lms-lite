@@ -59,7 +59,9 @@ REA-observed evidence exists for this build.
 | Submissions by student and status; grading with feedback | ✅ | Grader view with filters, prev/next student |
 | Return for revision | ✅ | Grants an extra attempt when needed |
 | Submission history and confirmation | ✅ | Every attempt kept |
-| Rubrics, annotations, peer review, group assignments | ⏳ | |
+| Rubrics: reusable course library, shared college library, criteria with levels | ✅ | Attached to the assignment, so one attachment covers assignments, quizzes and graded discussions. `rubrics.test.ts`, `e2e/rubrics.spec.ts` |
+| Rubric scoring (criterion total becomes the mark) | ✅ | Per-attachment toggle. Goes through `setGrade`, so the late policy, posting and totals are unchanged. **Refused on a quiz** — its questions score it (see §E). |
+| Annotations, peer review, group assignments | ⏳ | |
 | Plagiarism detection | ❌ | |
 
 ## E. Quizzes
@@ -73,7 +75,8 @@ REA-observed evidence exists for this build.
 | Result release settings (hide responses, correct answers from date, manual score release) | ✅ | |
 | Answer key protection | ✅ | Keys never sent to students unless release rules allow |
 | Regrade after key change | ✅ | |
-| Question banks, randomized question pools, essay rubrics, partial credit | ⏳ | |
+| Rubric on a quiz, for feedback | ✅ | The questions remain the mark: `syncQuizSubmission` rewrites the score on every attempt and regrade, so `useForGrading` is refused with a 422. |
+| Question banks, randomized question pools, per-question rubrics, partial credit | ⏳ | |
 | Proctoring / lockdown browser, access codes | ❌ | |
 
 ## F. Gradebook
@@ -88,6 +91,7 @@ REA-observed evidence exists for this build.
 | CSV export and import (dry run + apply) | ✅ | Formula-injection safe export |
 | Student grades view with feedback | ✅ | |
 | Custom grading schemes, final grade override, grade history UI | ⏳ | The audit log records every change |
+| Per-criterion grader comments | ⏳ | The stored snapshot takes one more optional key, so adding them needs no migration |
 
 ## G. Discussions & announcements
 

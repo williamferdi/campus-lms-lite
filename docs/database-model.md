@@ -19,7 +19,12 @@ organizations ─┬─ users ─┬─ auth_sessions
                            ├─ modules ─┬─ module_prerequisites (module → earlier module)
                            │           └─ module_items ── item_completions (user × item)
                            ├─ assignment_groups ── assignments ─┬─ submissions ─┬─ submission_attempts
-                           │                                    │                └─ submission_comments
+                           │                                    │               ├─ submission_comments
+                           │                                    │               └─ rubric_assessments
+                           │                                    └─ assignment_rubrics ─→ rubrics
+                           ├─ rubrics ── rubric_criteria        │ (one per assignment, so it
+                           │   (a rubric with no course_id is   │  covers quizzes and graded
+                           │    shared across the organization) │  discussions too)
                            ├─ quizzes ─┬─ quiz_questions        │
                            │           └─ quiz_attempts         │ (quiz.assignment_id → assignments)
                            ├─ discussion_topics ── discussion_entries (self-referencing parent_id)
@@ -50,6 +55,10 @@ audit_events (actor, action, entity, course, metadata jsonb)
 | submissions | One row per student per assignment | unique (assignment_id, user_id); `status` unsubmitted/submitted/pending_review/graded/returned; `attempt`, `extra_attempts`; `entered_score`, `points_deducted`, `score`, `grade`; `excused`; `late_policy_status` override; `posted_at` (grade release); `graded_attempt` |
 | submission_attempts | Immutable history | unique (submission_id, attempt); body, URL or file ids; `late` |
 | submission_comments | Feedback thread | `from_grader` (hidden from the student until released) |
+| rubrics | A reusable marking scheme | `org_id` **and** a nullable `course_id`: with a course it is that course's, without one it is shared across the organization and only an admin may change it. `course_id` never changes after creation — reuse is copying |
+| rubric_criteria | What the work is judged against | `rubric_id`, `position` (1..n), `description`, `long_description`, `points`, `levels jsonb` (`{id, description, points}[]`, ids minted server-side, like `quiz_questions.choices`) |
+| assignment_rubrics | Which rubric marks an assessment | unique `(assignment_id)` — and because a graded quiz and a graded discussion each hang off an assignment, that one row covers all three kinds. `use_for_grading`, `hide_points` |
+| rubric_assessments | One student's work judged against a rubric | unique `(submission_id)`; `total`, `points_possible`, `rubric_title`, `attempt`, and `criteria jsonb` — a **snapshot** of the wording, levels and maxima as they stood when the mark was given, so editing the library cannot move a mark already given |
 | quizzes | Quiz settings | `assignment_id` (graded quizzes; SET NULL), time limit, attempts, scoring policy, result-visibility settings, availability dates |
 | quiz_questions | Questions | `type`, `prompt_md/html`, `points`, `choices jsonb`, `answer_key jsonb` (never sent to students unless release rules allow) |
 | quiz_attempts | Attempts | unique (quiz_id, user_id, attempt_number); `answers jsonb`; `results jsonb` ({auto, manual, comment} per question); `expires_at` (server-enforced deadline); `status` in_progress/pending_review/graded |
@@ -70,6 +79,15 @@ audit_events (actor, action, entity, course, metadata jsonb)
 - Deleting **pages, assignments, quizzes, discussions or files** removes the module items that
   point at them. Deleting an assignment cascades to its submissions; the UI warns about this.
 - Discussion entries are soft-deleted to keep thread structure.
+- **A rubric that is attached cannot be deleted** (a guard, not a foreign key, so the error can
+  name the assessments). One that has only been *used to mark* can be: `rubric_assessments`
+  holds its own copy of the criteria, so the marking survives and `rubric_id` goes null.
+  Detaching a rubric likewise leaves every mark untouched; it is refused without `force` once
+  anybody has been marked, so nobody does it by accident. `assignment_rubrics.rubric_id` is left
+  at `NO ACTION` rather than `RESTRICT`: `RESTRICT` is checked immediately, so a course delete
+  cascading to both this table and `rubrics` could abort on a reference the same cascade was
+  about to remove.
+- Deleting a course takes its own rubrics with it and leaves the shared ones alone.
 - Foreign keys to users on authored content (`author_id`, `grader_id`, …) use `SET NULL`, so
   history survives.
 
@@ -85,5 +103,12 @@ unique attempt numbers.
 
 - `courses.image_file_id` has no FK (it would create a circular FK with `files.course_id`). It is
   cleared through the API.
+- `rubrics` is the only table carrying both `org_id` and `course_id`. Everywhere else a
+  course-scoped row inherits its tenant through `courses.org_id`, which `policy.ts` checks on the
+  way in; a shared rubric has no course to inherit from, so it holds its own. The invariant that
+  the two agree when `course_id` is set cannot be expressed in Postgres without a trigger, and
+  this schema uses none, so `services/rubrics.ts` is the only writer — it takes `org_id` from the
+  course or the caller and never from a request body, and `loadRubric` is the only reader, always
+  filtering by the caller's organization.
 - Module progress is computed on read. Courses with thousands of students would benefit from a
   cached progress table; that is not needed at the current scale.

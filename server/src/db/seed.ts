@@ -282,6 +282,50 @@ export async function seed(app: FastifyInstance, db: Db, password: string, log: 
     await lee.put(`/assignments/${discAssignment}/submissions/${authorId}/grade`, { grade: authorId === ids.s1.id ? "10" : "8" });
   }
 
+  // rubrics: one this course maintains, one the academic office shares with every course.
+  // Attached to nothing on purpose — attaching is one click, and a demo should not pretend a
+  // mark came from a rubric when it was typed in above.
+  const labRubric = (
+    await lee.post<{ rubric: { id: string } }>(`/courses/${bio101}/rubrics`, {
+      title: "Lab report rubric",
+      description: "How written lab work is marked in BIO101.",
+    })
+  ).rubric.id;
+  for (const criterion of [
+    { description: "Method", points: 10, hi: "Reproducible, with controls named", mid: "Mostly reproducible", lo: "Could not be repeated" },
+    { description: "Analysis", points: 15, hi: "Explains the result and its limits", mid: "Explains the result", lo: "Describes without explaining" },
+  ]) {
+    await lee.post(`/rubrics/${labRubric}/criteria`, {
+      description: criterion.description,
+      points: criterion.points,
+      levels: [
+        { description: criterion.hi, points: criterion.points },
+        { description: criterion.mid, points: criterion.points / 2 },
+        { description: criterion.lo, points: 0 },
+      ],
+    });
+  }
+  const collegeRubric = (
+    await admin.post<{ rubric: { id: string } }>("/rubrics", {
+      title: "College written work standard",
+      description: "Applies to written work across the college. Maintained by the academic office.",
+    })
+  ).rubric.id;
+  for (const criterion of [
+    { description: "Scholarship", points: 20 },
+    { description: "Written English", points: 5 },
+  ]) {
+    await admin.post(`/rubrics/${collegeRubric}/criteria`, {
+      description: criterion.description,
+      points: criterion.points,
+      levels: [
+        { description: "Meets the standard", points: criterion.points },
+        { description: "Approaching", points: criterion.points / 2 },
+        { description: "Below", points: 0 },
+      ],
+    });
+  }
+
   // ================================================================ CS150
   const cs150 = (await admin.post<{ course: { id: string } }>("/courses", {
     code: "CS150",

@@ -10,6 +10,7 @@ import { cellFor, courseStudents, hideGrades, loadGradeData, postGrades } from "
 import { courseMemberIds, notify } from "../services/notify.js";
 import { contentEditor, courseAccess, requireStaff, requireUser } from "../services/policy.js";
 import { assertContentUnlocked, recordContentView } from "../services/progress.js";
+import { rubricForAssignment } from "../services/rubrics.js";
 import type { AppContext } from "../types.js";
 
 const STUDENT_SUBMISSION_TYPES = ["online_text_entry", "online_url", "online_upload", "on_paper", "none"] as const;
@@ -257,7 +258,10 @@ export default async function assignmentRoutes(app: FastifyInstance) {
     const access = await courseAccess(ctx, user, assignment.courseId);
     const [quiz] = await ctx.db.select({ id: quizzes.id }).from(quizzes).where(eq(quizzes.assignmentId, assignment.id));
     const [discussion] = await ctx.db.select({ id: discussionTopics.id }).from(discussionTopics).where(eq(discussionTopics.assignmentId, assignment.id));
-    const base = { ...describeAssignment(assignment), quizId: quiz?.id ?? null, discussionId: discussion?.id ?? null };
+    // Students get the blank rubric before they submit: knowing how the work will be judged is
+    // the point of having one. Points are stripped here when the rubric hides them.
+    const rubric = await rubricForAssignment(ctx, assignment.id, { asStudent: !access.isStaff });
+    const base = { ...describeAssignment(assignment), quizId: quiz?.id ?? null, discussionId: discussion?.id ?? null, rubric };
     if (access.isStaff) {
       const [{ n } = { n: 0 }] = await ctx.db.select({ n: count() }).from(submissions).where(eq(submissions.assignmentId, assignment.id));
       return { assignment: { ...base, description: assignment.descriptionMd, submissionCount: n }, permissions: { isStaff: true } };

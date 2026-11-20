@@ -104,6 +104,33 @@ Role legend used below: **A** admin · **T** teacher · **TA** · **S** student 
 | POST | /courses/:id/gradebook/import | T/TA/A | `{csv, dryRun=true}`. Rows match by email, columns by `[assignment-id]`. |
 | GET | /courses/:id/needs-grading | enrolled | Count of submissions awaiting grading (0 for students). |
 
+## Rubrics
+
+A rubric is attached to an **assignment**, and a graded quiz and a graded discussion each have
+one behind them, so these routes cover all three kinds of assessment. A rubric with a course
+belongs to it; one without is the shared college rubric, usable by any teacher and editable only
+by an admin. Anything the caller may not reach is **404**, not 403.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | /courses/:id/rubrics | T/TA/A | The course's own rubrics **and** the shared ones. |
+| POST | /courses/:id/rubrics | T/TA/A | `{title, description?}`. The organization comes from the course, never the body. |
+| GET/POST | /rubrics | A | The shared library. `POST` creates a rubric with no course. |
+| GET | /rubrics/:id | T/TA/A | `{rubric, canEdit, usedBy}`. `usedBy` names the assessments attached to it. |
+| PATCH/DELETE | /rubrics/:id | owner's T/TA/A; **shared: A only** | DELETE is **409** while it is attached. Deleting one that was only used to *mark* is allowed — each mark keeps its own copy. |
+| POST | /rubrics/:id/copy | T/TA/A | `{courseId, title?}`. An editable clone, for a teacher who needs different words. |
+| POST | /rubrics/:id/criteria | as the rubric | `{description, longDescription?, points?, levels?}`. `levels` are `{id?, description, points}`; ids are minted server-side. `points` defaults to the top level. |
+| PATCH/DELETE | /rubric-criteria/:id | as the rubric | DELETE renumbers the rest 1..n. |
+| POST | /rubrics/:id/criteria/reorder | as the rubric | `{criterionIds}` — every criterion exactly once, then renumbered 1..n. |
+| PUT | /assignments/:id/rubric | T/TA/A | `{rubricId, useForGrading=true, hidePoints=false}`. Returns `pointsMismatch` when the criteria do not add up to the assessment's points — reported, never corrected. **422** for `useForGrading` on a quiz-backed or ungraded assignment. |
+| DELETE | /assignments/:id/rubric | T/TA/A | **409** once anybody has been marked, unless `?force=true`. Marks and their snapshots survive either way. |
+| PUT | /assignments/:id/submissions/:userId/rubric-assessment | T/TA/A | `{awards: [{criterionId, points?, levelId?}]}` — every criterion exactly once. `points: null` means not yet marked. The snapshot is built server-side from the live criteria; a stale award set is **422**. The grade moves only when the rubric scores the work *and* every criterion is marked, and then only through `setGrade`. **422** on an excused submission. |
+
+A rubric also appears on the reads it belongs to: `GET /assignments/:id`, `GET /quizzes/:id` and
+`GET /discussions/:id` carry `rubric` (points stripped for students when `hidePoints`), and
+`GET /assignments/:id/submissions/:userId` carries `rubricAssessment`, released to the student on
+the same terms as a grader's comments — once the grade is posted.
+
 ## Quizzes
 
 | Method | Path | Who | Notes |

@@ -18,6 +18,7 @@ export function AdminLayout() {
     { to: "/admin", label: "Users", end: true },
     { to: "/admin/courses", label: "Courses" },
     { to: "/admin/catalog", label: "Terms & departments" },
+  { to: "/admin/rubrics", label: "Rubrics" },
     { to: "/admin/audit", label: "Audit log" },
   ];
   return (
